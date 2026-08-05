@@ -526,7 +526,10 @@
 
   .row {
     display: grid;
-    grid-template-columns: 46px 62px 132px minmax(0, 1fr);
+    /* number, description, segment ID, values. The description leads because
+       it is what identifies a row when reading; the ID sits against the
+       values it labels. */
+    grid-template-columns: 46px 150px 46px minmax(0, 1fr);
     gap: 10px;
     align-items: center;
     width: 100%;
@@ -549,6 +552,9 @@
   .row.touched-shift { border-left-color: var(--shift); }
   .row.touched-swap  { border-left-color: var(--swap); }
   .row.envelope .row-id { color: var(--slate); }
+  /* The segment a finding pointed at, so it is identifiable once the jump
+     lands and the surrounding rows all look alike. */
+  .row.focus { background: var(--signal-wash); border-left-color: var(--signal); }
 
   .row-n {
     font-family: var(--mono);
@@ -563,6 +569,7 @@
     font-weight: 700;
     color: var(--ink);
     letter-spacing: .02em;
+    text-align: right;
   }
   .row-role {
     font-size: 11px;
@@ -700,6 +707,39 @@
   .ctable .cdim { color: var(--slate); }
   .masked { font-family: var(--mono); color: var(--slate); letter-spacing: .05em; }
   .claims-empty { padding: 32px 24px; color: var(--slate); }
+
+  /* ---- checks -------------------------------------------------------- */
+  .checks-head { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .checks-list { padding: 8px 0; }
+  .finding {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 12px;
+    width: 100%;
+    padding: 10px 16px;
+    background: none; border: 0; border-bottom: 1px solid var(--line-soft);
+    text-align: left; cursor: pointer; color: inherit; font: inherit;
+  }
+  .finding:hover { background: var(--panel-2); }
+  .finding-mark {
+    grid-row: span 2;
+    width: 8px; height: 8px; margin-top: 6px; border-radius: 50%;
+  }
+  .finding-mark.error { background: var(--danger); }
+  .finding-mark.warning { background: var(--swap); }
+  .finding-title { font-weight: 500; }
+  .finding-detail { color: var(--slate); font-size: var(--step--1); }
+  .checks-ok { padding: 32px 24px; color: var(--slate); }
+  .checks-ok b { color: var(--ink); }
+  /* Count badge on the tab itself, so a broken file announces itself
+     without the tab having to be opened. */
+  .tab-badge {
+    margin-left: 6px; padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--danger); color: #fff;
+    font-size: 10px; font-variant-numeric: tabular-nums;
+  }
+  .tab-badge.warning { background: var(--swap); }
 
   /* ---- stage: results ----------------------------------------------- */
   .stage-head {
@@ -1056,6 +1096,7 @@
       <div class="tabs" role="tablist">
         <button class="tab" id="tabDocument" role="tab" aria-selected="true" type="button">Document</button>
         <button class="tab" id="tabClaims"   role="tab" aria-selected="false" type="button">Claims</button>
+        <button class="tab" id="tabChecks"   role="tab" aria-selected="false" type="button">Checks</button>
         <button class="tab" id="tabChanges"  role="tab" aria-selected="false" type="button" hidden>Changes</button>
         <button class="tab" id="tabOutput"   role="tab" aria-selected="false" type="button" hidden>Output</button>
       </div>
@@ -1063,6 +1104,7 @@
       <div class="panes">
         <div id="paneDocument"></div>
         <div id="paneClaims" hidden></div>
+        <div id="paneChecks" hidden></div>
         <div id="paneChanges" hidden></div>
         <div id="paneOutput" hidden></div>
       </div>
@@ -1107,6 +1149,18 @@
       <h3>Reading a production file</h3>
       <p>The <b>Claims</b> tab flattens the interchange into one row per service line &mdash; patient, date, procedure, modifiers, units, charge, diagnoses, payer &mdash; which is closer to how a claim is actually read than a list of segments is. <b>Export CSV</b> writes every row, not just the ones on screen.</p>
       <p>The eye button in the header hides names, addresses, dates of birth, member IDs and social security numbers wherever they appear, so a real file can be browsed or screen-shared without putting identifiers in front of the room. It is a display setting only: the file you download always carries the real values, and a CSV exported while masking is on is named <code>_masked</code> to record which one you have.</p>
+    </section>
+
+    <section>
+      <h3>What Checks looks at</h3>
+      <p>Two kinds of problem, both of which are invisible until someone else rejects the file.</p>
+      <dl>
+        <dt>Control counts and envelopes</dt>
+        <dd><code>SE-01</code> must equal the number of segments from <code>ST</code> to <code>SE</code> inclusive, <code>GE-01</code> the number of transaction sets in the group, and <code>IEA-01</code> the number of groups. Each trailer's control number must match the header that opened it. These are how a receiver detects a truncated transmission, so a file that disagrees with itself is refused before the claims are read at all.</dd>
+        <dt>Claim balance</dt>
+        <dd><code>CLM-02</code> is compared against the charges on the claim's service lines. Amounts are compared as whole cents, so a file that balances is never reported as off by a rounding error. A line charge that isn't a number is reported on its own, and the claim total check is skipped rather than measured against a sum that can't be computed.</dd>
+      </dl>
+      <p>Selecting a finding jumps to the segment it came from. Nothing here changes the file &mdash; but if a rule ever adds or removes a segment, the control counts are corrected automatically on the way out, since every count above the change would otherwise be wrong.</p>
     </section>
 
     <section>
@@ -1457,6 +1511,7 @@ function processText(raw, rules) {
   }
 
   const before = snapshot(doc.segments);
+  const countBefore = doc.segments.length;
   const summary = [];
   const ruleKindsBySegment = new Map();
 
@@ -1476,6 +1531,18 @@ function processText(raw, rules) {
       for (const el of mark.elements) entry.elements.set(el, rule.kind);
     }
   }
+
+  // A rule that inserts or removes a segment invalidates every control count
+  // above it, and a file with wrong counts is rejected on receipt. No rule
+  // does that today, so this is a no-op -- but it is the kind of breakage
+  // that is invisible until a trading partner complains, so it is repaired
+  // here rather than left to be noticed.
+  //
+  // The change list below pairs segments by index, which only holds while
+  // the count is unchanged; a rule that changes it will need that revisited.
+  const countsRepaired = doc.segments.length === countBefore
+    ? 0
+    : repairControlCounts(doc);
 
   const changes = [];
   doc.segments.forEach((seg, i) => {
@@ -1500,7 +1567,197 @@ function processText(raw, rules) {
     },
     summary,
     changes,
+    countsRepaired,
   };
+}
+
+/* ---- validation ----------------------------------------------------- */
+
+// Money in X12 is a decimal string. Comparing those as floats turns 0.1+0.2
+// into a discrepancy that isn't there, so amounts are compared as integer
+// cents. Returns null for anything that isn't a number, which the caller
+// reports separately rather than silently treating as zero.
+function toCents(value) {
+  if (!/^-?\d*\.?\d*$/.test(value) || value === "" || value === ".") return null;
+  const negative = value.startsWith("-");
+  const [whole, frac = ""] = value.replace("-", "").split(".");
+  const cents = Number(whole || "0") * 100 + Number((frac + "00").slice(0, 2));
+  return negative ? -cents : cents;
+}
+
+function centsToAmount(cents) {
+  const sign = cents < 0 ? "-" : "";
+  const n = Math.abs(cents);
+  return `${sign}${Math.floor(n / 100)}.${String(n % 100).padStart(2, "0")}`;
+}
+
+// Read-only structural checks. Nothing here mutates the document; the
+// result is a list of findings for the UI to render.
+//
+// Control counts are worth checking before anything else: SE01, GE01 and
+// IEA01 are how a receiver detects a truncated transmission, and the
+// SE02/GE02/IEA02 trailers tie back to their headers. A file whose counts
+// disagree is rejected at the front door, whatever the claims say.
+function validateDocument(doc) {
+  const findings = [];
+  const add = (level, title, detail, segment) =>
+    findings.push({ level, title, detail, segment });
+
+  const segments = doc.segments;
+  let isa = null, gs = null, st = null;
+  let groupsInInterchange = 0, setsInGroup = 0;
+  let claim = null;
+
+  const closeClaim = () => {
+    if (!claim) return;
+    const stated = toCents(claim.stated);
+    if (stated === null) {
+      add("warning", "Claim total is not a number",
+        `CLM-02 on claim ${claim.id || "(no id)"} reads "${claim.stated}".`, claim.at);
+    } else if (claim.lines > 0 && stated !== claim.sum) {
+      add("error", "Claim total does not match its service lines",
+        `CLM-02 on claim ${claim.id || "(no id)"} states ${centsToAmount(stated)}, ` +
+        `but its ${claim.lines} service line${claim.lines === 1 ? "" : "s"} add up to ` +
+        `${centsToAmount(claim.sum)}.`, claim.at);
+    }
+    claim = null;
+  };
+
+  segments.forEach((seg, i) => {
+    switch (seg.id) {
+      case "ISA":
+        isa = { at: i, control: seg.elements[12] };
+        groupsInInterchange = 0;
+        break;
+
+      case "GS":
+        gs = { at: i, control: seg.elements[5] };
+        groupsInInterchange++;
+        setsInGroup = 0;
+        break;
+
+      case "ST":
+        st = { at: i, control: seg.elements[1] };
+        setsInGroup++;
+        break;
+
+      case "CLM":
+        closeClaim();
+        claim = { at: i, id: seg.elements[0], stated: seg.elements[1] || "", sum: 0, lines: 0 };
+        break;
+
+      case "SV1": case "SV2": {
+        if (!claim) break;
+        // SV1-02 is the line charge; on an institutional SV2 it is SV2-03.
+        const charge = seg.id === "SV1" ? seg.elements[1] : seg.elements[2];
+        const cents = toCents(charge || "");
+        claim.lines++;
+        if (cents === null) {
+          add("warning", "Service line charge is not a number",
+            `${seg.id} on claim ${claim.id || "(no id)"} reads "${charge}".`, i);
+          claim.lines = -1e9; // suppress the total check: the sum is unknowable
+        } else {
+          claim.sum += cents;
+        }
+        break;
+      }
+
+      case "SE": {
+        closeClaim();
+        if (!st) { add("error", "SE with no matching ST", "A transaction trailer appeared before any header.", i); break; }
+
+        const counted = i - st.at + 1; // ST through SE inclusive
+        const stated = Number(seg.elements[0]);
+        if (String(stated) !== String(Number(seg.elements[0])) || !Number.isFinite(stated)) {
+          add("error", "SE-01 is not a number", `Segment count reads "${seg.elements[0]}".`, i);
+        } else if (stated !== counted) {
+          add("error", "Transaction segment count is wrong",
+            `SE-01 states ${stated} segments, but ${counted} are present between ST and SE inclusive.`, i);
+        }
+        if (seg.elements[1] !== st.control) {
+          add("error", "Transaction control numbers do not match",
+            `SE-02 is "${seg.elements[1]}" but the ST-02 that opened this transaction is "${st.control}".`, i);
+        }
+        st = null;
+        break;
+      }
+
+      case "GE": {
+        if (!gs) { add("error", "GE with no matching GS", "A group trailer appeared before any header.", i); break; }
+        const stated = Number(seg.elements[0]);
+        if (stated !== setsInGroup) {
+          add("error", "Transaction set count is wrong",
+            `GE-01 states ${seg.elements[0]} transaction sets, but ${setsInGroup} are present in this group.`, i);
+        }
+        if (seg.elements[1] !== gs.control) {
+          add("error", "Group control numbers do not match",
+            `GE-02 is "${seg.elements[1]}" but GS-06 is "${gs.control}".`, i);
+        }
+        gs = null;
+        break;
+      }
+
+      case "IEA": {
+        if (!isa) { add("error", "IEA with no matching ISA", "An interchange trailer appeared before any header.", i); break; }
+        const stated = Number(seg.elements[0]);
+        if (stated !== groupsInInterchange) {
+          add("error", "Functional group count is wrong",
+            `IEA-01 states ${seg.elements[0]} groups, but ${groupsInInterchange} are present.`, i);
+        }
+        if (seg.elements[1] !== isa.control) {
+          add("error", "Interchange control numbers do not match",
+            `IEA-02 is "${seg.elements[1]}" but ISA-13 is "${isa.control}".`, i);
+        }
+        isa = null;
+        break;
+      }
+    }
+  });
+
+  closeClaim();
+  if (st) add("error", "Transaction is never closed", `The ST at segment ${st.at + 1} has no SE.`, st.at);
+  if (gs) add("error", "Functional group is never closed", `The GS at segment ${gs.at + 1} has no GE.`, gs.at);
+  if (isa) add("error", "Interchange is never closed", `The ISA at segment ${isa.at + 1} has no IEA.`, isa.at);
+
+  return findings;
+}
+
+// Rewrites SE-01, GE-01 and IEA-01 to the counts actually present. Returns
+// the number of trailers corrected.
+//
+// Called automatically when a run changes how many segments a document has:
+// a rule that inserts or removes even one segment invalidates every count
+// above it, and shipping that file means an immediate rejection. When no
+// rule changes the segment count -- the case today -- this is a no-op.
+function repairControlCounts(doc) {
+  let fixed = 0;
+  let stAt = -1, setsInGroup = 0, groups = 0;
+
+  doc.segments.forEach((seg, i) => {
+    switch (seg.id) {
+      case "GS": setsInGroup = 0; groups++; break;
+      case "ST": stAt = i; setsInGroup++; break;
+      case "SE": {
+        if (stAt === -1) break;
+        const counted = String(i - stAt + 1);
+        if (seg.elements[0] !== counted) { seg.elements[0] = counted; fixed++; }
+        stAt = -1;
+        break;
+      }
+      case "GE": {
+        const counted = String(setsInGroup);
+        if (seg.elements[0] !== counted) { seg.elements[0] = counted; fixed++; }
+        break;
+      }
+      case "IEA": {
+        const counted = String(groups);
+        if (seg.elements[0] !== counted) { seg.elements[0] = counted; fixed++; }
+        break;
+      }
+    }
+  });
+
+  return fixed;
 }
 
 // Same collision-safe naming as the desktop app: stem_processed_<stamp>.ext
@@ -1700,6 +1957,8 @@ const state = {
   window: null,       // {first, last} slice of `visible` currently in the DOM
   claims: null,       // service-line index, built lazily when Claims is opened
   mask: false,        // hide PHI on screen; never affects the output file
+  findings: null,     // validation results, built lazily when Checks is opened
+  focus: null,        // segment jumped to from a finding, highlighted in the list
 };
 
 /* ---- outline ------------------------------------------------------- */
@@ -1856,7 +2115,13 @@ function loadFile(name, raw) {
   errorSlot.innerHTML = "";
 
   state.outline = buildOutline(state.doc.segments);
-  state.claims = null; // stale the moment the document changes; rebuilt on demand
+  state.claims = null;  // stale the moment the document changes; rebuilt on demand
+  state.focus = null;
+  // Validation runs eagerly, unlike the claim index: the tab badge has to be
+  // right before anyone opens the tab, and this is one pass that allocates
+  // only for the problems it finds.
+  state.findings = validateDocument(state.doc);
+  syncChecksBadge();
   $("blank").hidden = true;
   $("workspace").hidden = false;
   $("stageLabel").textContent = "Loaded";
@@ -1958,6 +2223,7 @@ function renderDocument() {
         start: state.outline[+at].start,
         end: state.outline[+at].end,
       };
+      state.focus = null; // a deliberate jump elsewhere retires the highlight
       for (const other of $("paneDocument").querySelectorAll(".onode")) {
         other.setAttribute("aria-pressed", String(other === btn));
       }
@@ -1966,6 +2232,21 @@ function renderDocument() {
   }
 
   renderRows();
+}
+
+// Brings a segment into view in the document browser. Rather than computing
+// a scroll offset -- the list is virtualized, and it scrolls with the pane
+// on a wide screen but with the page on a narrow one -- this narrows the
+// scope to a window around the target, which is the same mechanism the
+// outline already uses to jump. The target lands a little below the top of
+// the list, with its neighbours for context.
+function revealSegment(index) {
+  if (!state.doc) return;
+  const total = state.doc.segments.length;
+  state.filter = "";
+  state.scope = { start: Math.max(0, index - 12), end: Math.min(total, index + 28) };
+  state.focus = index;
+  renderDocument();
 }
 
 function scopedIndices() {
@@ -2089,10 +2370,10 @@ function renderRow(index, needle, alt) {
   const label = role || name;
   const title = name && role ? `${name} \u2014 ${role}` : (name || role);
 
-  return `<button type="button" class="row${alt ? " alt" : ""}${kind ? " touched-" + kind : ""}${envelope ? " envelope" : ""}" data-seg="${index}" title="${escapeHtml(title)}">
+  return `<button type="button" class="row${alt ? " alt" : ""}${kind ? " touched-" + kind : ""}${envelope ? " envelope" : ""}${index === state.focus ? " focus" : ""}" data-seg="${index}" title="${escapeHtml(title)}">
     <span class="row-n">${index + 1}</span>
-    <span class="row-id">${escapeHtml(seg.id)}</span>
     <span class="row-role">${escapeHtml(label)}</span>
+    <span class="row-id">${escapeHtml(seg.id)}</span>
     <span class="row-el">${elements || '<span class="sepc">no elements</span>'}</span>
   </button>`;
 }
@@ -2449,6 +2730,68 @@ function exportClaimsCsv() {
   toast(`${rows.length.toLocaleString()} service lines exported${state.mask ? ", PHI masked" : ""}`);
 }
 
+/* ---- checks --------------------------------------------------------- */
+
+function renderChecks() {
+  if (!state.doc) return;
+  if (!state.findings) state.findings = validateDocument(state.doc);
+
+  const findings = state.findings;
+  const errors = findings.filter((f) => f.level === "error").length;
+
+  if (!findings.length) {
+    $("paneChecks").innerHTML = `<div class="checks-ok">
+      <p><b>No problems found.</b></p>
+      <p>Control numbers and segment counts agree at every level
+      (<code>SE</code>, <code>GE</code>, <code>IEA</code>), every envelope is closed, and each
+      claim's <code>CLM-02</code> total matches the charges on its service lines.</p>
+    </div>`;
+    return;
+  }
+
+  const list = findings.map((f, i) => `<button type="button" class="finding" data-finding="${i}">
+    <span class="finding-mark ${f.level}"></span>
+    <span class="finding-title">${escapeHtml(f.title)}</span>
+    <span class="finding-detail">${escapeHtml(f.detail)} &middot; segment ${f.segment + 1}</span>
+  </button>`).join("");
+
+  const warnings = findings.length - errors;
+  const parts = [];
+  if (errors) parts.push(`<b>${errors}</b> error${errors === 1 ? "" : "s"}`);
+  if (warnings) parts.push(`<b>${warnings}</b> warning${warnings === 1 ? "" : "s"}`);
+
+  $("paneChecks").innerHTML = `
+    <div class="checks-head"><span class="label">${parts.join(" &middot; ")}</span></div>
+    <div class="checks-list">${list}</div>`;
+}
+
+// Jumping to the offending segment is the whole point of a finding, so the
+// list delegates into the document browser.
+$("paneChecks").addEventListener("click", (e) => {
+  const button = e.target.closest(".finding");
+  if (!button || !state.findings) return;
+  const finding = state.findings[+button.dataset.finding];
+  if (!finding) return;
+  selectTab("document");
+  revealSegment(finding.segment);
+});
+
+// Surfaces the worst level on the tab, so a file with a broken envelope
+// says so before anyone thinks to look.
+function syncChecksBadge() {
+  const tab = $("tabChecks");
+  const findings = state.findings || [];
+  const errors = findings.filter((f) => f.level === "error").length;
+  const count = errors || findings.length;
+
+  tab.textContent = "Checks";
+  if (!count) return;
+  const badge = document.createElement("span");
+  badge.className = "tab-badge" + (errors ? "" : " warning");
+  badge.textContent = String(count);
+  tab.appendChild(badge);
+}
+
 /* ---- rule cards ---------------------------------------------------- */
 function syncCards() {
   $("shiftCard").classList.toggle("off", !$("shiftOn").checked);
@@ -2564,7 +2907,13 @@ function render(result) {
 
   state.doc = parse(result.output); // browse the edited document, not the original
   state.outline = buildOutline(state.doc.segments);
-  state.claims = null; // stale the moment the document changes; rebuilt on demand
+  state.claims = null;  // stale the moment the document changes; rebuilt on demand
+  state.focus = null;
+  // Validation runs eagerly, unlike the claim index: the tab badge has to be
+  // right before anyone opens the tab, and this is one pass that allocates
+  // only for the problems it finds.
+  state.findings = validateDocument(state.doc);
+  syncChecksBadge();
   renderDocument();
   renderChanges(result);
   renderOutput(result);
@@ -2635,7 +2984,7 @@ function renderOutput(result) {
 }
 
 /* ---- tabs ---------------------------------------------------------- */
-const TABS = ["document", "claims", "changes", "output"];
+const TABS = ["document", "claims", "checks", "changes", "output"];
 
 function selectTab(which) {
   for (const name of TABS) {
@@ -2649,9 +2998,10 @@ function selectTab(which) {
     state.window = null;
     paintWindow();
   }
-  // Built on first open rather than at load: on a large file the index is
-  // real work, and most sessions never leave the Document tab.
+  // Built on first open rather than at load: on a large file both of these
+  // are real work, and most sessions never leave the Document tab.
   if (which === "claims") renderClaims();
+  if (which === "checks") renderChecks();
 }
 for (const name of TABS) {
   $("tab" + name[0].toUpperCase() + name.slice(1)).addEventListener("click", () => selectTab(name));
