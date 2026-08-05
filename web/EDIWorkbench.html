@@ -647,6 +647,18 @@
   }
   .etable .mean { color: var(--slate); }
 
+  /* Composite breakdown: sub-rows hang off the element row above them, so
+     they lose the row rule and gain an indent on the position column. */
+  .etable tr.sub td { border-bottom: 0; padding-top: 0; padding-bottom: 3px; }
+  .etable tr.sub-last td { border-bottom: 1px solid var(--line-soft); padding-bottom: 6px; }
+  .etable tr.sub .pos { padding-left: 16px; opacity: .7; }
+  .etable tr.sub .val { color: var(--slate); }
+  .etable .part { color: var(--slate); }
+  .etable .part b { color: var(--ink); font-weight: 500; }
+  /* The component separator, shown in place so the composite's shape is
+     visible in the raw value as well as in the breakdown. */
+  .csep { color: var(--signal); opacity: .65; }
+
   /* ---- stage: results ----------------------------------------------- */
   .stage-head {
     display: flex; align-items: center; gap: 16px;
@@ -925,9 +937,14 @@
         </label>
         <div class="opt-row">
           <label class="check"><input type="checkbox" id="caseOn" checked /> Match case</label>
-          <label class="check"><input type="checkbox" id="wholeOn" /> Whole element only</label>
+        </div>
+        <div class="opt-row" role="radiogroup" aria-label="What the search text has to match">
+          <label class="check"><input type="radio" name="matchMode" id="modeAny" checked /> Anywhere</label>
+          <label class="check"><input type="radio" name="matchMode" id="modeElement" /> Whole element</label>
+          <label class="check"><input type="radio" name="matchMode" id="modeComponent" /> Whole component</label>
         </div>
         <p class="hint">Rewrites element values only. Segment IDs and the fixed-width <code>ISA</code> header are never touched &mdash; editing either produces a file the receiver can't parse.</p>
+        <p class="hint"><b>Whole component</b> matches inside composites: in <code>SV1*HC:99213:25</code> it can match <code>99213</code> on its own, which <b>whole element</b> cannot &mdash; there the whole element is <code>HC:99213:25</code>.</p>
       </div>
     </section>
 
@@ -1089,10 +1106,16 @@ function splitN(text, sep, maxsplit) {
   return out;
 }
 
-// Detect the three delimiters from the ISA segment rather than assuming
-// '*' and '~'. ISA is the one fixed-width segment in X12: its 16th element
-// is always exactly one character (the component separator), and the
-// segment terminator is the character immediately after it.
+// Detect the delimiters from the ISA segment rather than assuming '*' and
+// '~'. ISA is the one fixed-width segment in X12: its 16th element is always
+// exactly one character (the component separator), and the segment
+// terminator is the character immediately after it.
+//
+// ISA11 is version-dependent and must not be read blind. Through 4010 it is
+// the Interchange Control Standards Identifier (a letter, normally 'U'); in
+// 5010 the position was repurposed as the repetition separator (normally
+// '^'). ISA12 carries the version, so it decides which reading applies --
+// treating a 4010 'U' as a repetition separator would be wrong.
 function detectDelimiters(raw) {
   if (!raw.startsWith("ISA")) {
     throw new Error("File does not start with an ISA segment; not a valid X12 interchange.");
@@ -1106,11 +1129,37 @@ function detectDelimiters(raw) {
   if (last.length < 2) {
     throw new Error("Malformed ISA segment; missing component separator/segment terminator.");
   }
-  return { elementSep, componentSep: last[0], segmentTerminator: last[1] };
+
+  const version = parts[11];                       // ISA12
+  const repetitionSep = version >= "00501" ? parts[10] : null;  // ISA11
+
+  return {
+    elementSep,
+    componentSep: last[0],
+    segmentTerminator: last[1],
+    // Null for pre-5010 files, and for a 5010 file that declares no
+    // repetition (the standard's placeholder is 'U').
+    repetitionSep: repetitionSep === "U" ? null : repetitionSep,
+    version,
+  };
+}
+
+// Split an element into its components. Returns null when the element has
+// no component separator in it, so callers can cheaply distinguish "this is
+// a simple element" from "this is a composite that happens to have one part".
+//
+// Elements stay strings in the document model on purpose: serialize() is
+// then a plain join, output remains byte-identical, and no rule, mark, or
+// diff has to learn about composites. Splitting happens here, at the point
+// of use, for display and for matching.
+function splitComponents(value, componentSep) {
+  if (!componentSep || !value.includes(componentSep)) return null;
+  return value.split(componentSep);
 }
 
 function parse(raw) {
-  const { elementSep, componentSep, segmentTerminator } = detectDelimiters(raw);
+  const { elementSep, componentSep, segmentTerminator, repetitionSep, version } =
+    detectDelimiters(raw);
 
   const pieces = raw.split(segmentTerminator);
   const tail = pieces.length ? pieces.pop() : "";
@@ -1124,7 +1173,10 @@ function parse(raw) {
     segments.push({ id: tokens[0], elements: tokens.slice(1), leadingWs });
   }
 
-  return { segments, elementSep, componentSep, segmentTerminator, tail };
+  return {
+    segments, elementSep, componentSep, segmentTerminator, tail,
+    repetitionSep, version,
+  };
 }
 
 function serialize(doc) {
@@ -1191,7 +1243,10 @@ class Dtp472ServiceLineShiftRule {
 }
 
 class StringReplaceRule {
-  constructor({ find, replace = "", caseSensitive = true, wholeElement = false, segmentIds = null }) {
+  constructor({
+    find, replace = "", caseSensitive = true,
+    wholeElement = false, wholeComponent = false, segmentIds = null,
+  }) {
     this.name = "string_replace";
     this.label = "Find & replace";
     this.kind = "swap";
@@ -1199,14 +1254,23 @@ class StringReplaceRule {
     this.replace = replace;
     this.caseSensitive = caseSensitive;
     this.wholeElement = wholeElement;
+    this.wholeComponent = wholeComponent;
+    // Component matching is the narrower claim, so it wins if both are set.
+    this.mode = wholeComponent ? "component" : wholeElement ? "element" : "substring";
     this.segmentIds = segmentIds && segmentIds.length
       ? new Set(segmentIds.map((s) => s.toUpperCase()))
       : null;
+    // Learned from the document in check(); null means "no composite
+    // structure known", in which case component mode falls back to element
+    // mode rather than silently matching nothing.
+    this.componentSep = null;
   }
 
   // Called before any rule runs. Rejects a configuration that would
   // produce a file that no longer parses.
   check(doc) {
+    this.componentSep = doc.componentSep;
+
     const clashes = [
       [doc.elementSep, "element separator"],
       [doc.segmentTerminator, "segment terminator"],
@@ -1224,6 +1288,16 @@ class StringReplaceRule {
           `already split on it, so that text can never match. Search within a single element.`
         );
       }
+    }
+
+    // Only a problem in component mode: elsewhere the separator is an
+    // ordinary character inside an element value and matching it is legal.
+    if (this.mode === "component" && this.find.includes(doc.componentSep)) {
+      throw new Error(
+        `Search text contains this file's component separator (${doc.componentSep}), so it ` +
+        `spans more than one component and whole-component matching can never succeed. ` +
+        `Search for a single component, or switch off "whole component".`
+      );
     }
   }
 
@@ -1250,12 +1324,30 @@ class StringReplaceRule {
     return { segments: marks.length, occurrences, marks };
   }
 
+  // True when `text` is exactly the search term, honouring case sensitivity.
+  equals(text) {
+    return this.caseSensitive
+      ? text === this.find
+      : text.toLowerCase() === this.find.toLowerCase();
+  }
+
   replaceIn(value) {
-    if (this.wholeElement) {
-      const same = this.caseSensitive
-        ? value === this.find
-        : value.toLowerCase() === this.find.toLowerCase();
-      return same ? [this.replace, 1] : [value, 0];
+    // Whole-component: the element is split on the component separator and
+    // each part matched on its own, so "99213" can match inside HC:99213:25
+    // without also matching the 99213 in a claim number somewhere.
+    if (this.mode === "component" && this.componentSep && value.includes(this.componentSep)) {
+      let count = 0;
+      const next = value
+        .split(this.componentSep)
+        .map((part) => { if (!this.equals(part)) return part; count++; return this.replace; })
+        .join(this.componentSep);
+      return count ? [next, count] : [value, 0];
+    }
+
+    // A simple element in component mode is a single component, so exact
+    // matching is the right behaviour -- same as whole-element.
+    if (this.mode === "element" || this.mode === "component") {
+      return this.equals(value) ? [this.replace, 1] : [value, 0];
     }
     if (this.caseSensitive) {
       const count = countOccurrences(value, this.find);
@@ -1457,6 +1549,71 @@ const QUALIFIERS = {
   SV1: {},
 };
 
+// Composite elements: the ones where a single element packs several values
+// separated by the component separator, and reading it as one opaque string
+// loses the point. `parts` names each component in order; `codes` decodes
+// the ones that are code lists. A "*" key means every element of that
+// segment is the same kind of composite (HI works that way).
+const COMPOSITES = {
+  SV1: { 0: {
+    label: "Procedure",
+    parts: ["Qualifier", "Procedure code", "Modifier", "Modifier", "Modifier", "Modifier", "Description"],
+    codes: { 0: {
+      HC: "HCPCS/CPT", ER: "Jurisdiction procedure", IV: "HIEC",
+      WK: "Advanced billing concept", HP: "HIPPS rate code", N4: "NDC (11-digit)",
+    } },
+  } },
+  SV2: { 1: {
+    label: "Procedure",
+    parts: ["Qualifier", "Procedure code", "Modifier", "Modifier", "Modifier", "Modifier", "Description"],
+    codes: { 0: { HC: "HCPCS/CPT", HP: "HIPPS rate code", N4: "NDC (11-digit)", ER: "Jurisdiction procedure" } },
+  } },
+  // Every HI element is a health-care-code composite: qualifier, then code.
+  HI: { "*": {
+    label: "Diagnosis / procedure",
+    parts: ["Code list", "Code", "Date format", "Date", "Amount", "Quantity", "Version", "Present on admission"],
+    codes: { 0: {
+      ABK: "ICD-10-CM principal diagnosis", ABF: "ICD-10-CM other diagnosis",
+      ABJ: "ICD-10-CM admitting diagnosis", ABN: "ICD-10-CM external cause",
+      APR: "ICD-10-CM reason for visit", ABU: "ICD-10-CM",
+      BBR: "ICD-10-PCS principal procedure", BBQ: "ICD-10-PCS other procedure",
+      BK: "ICD-9-CM principal diagnosis", BF: "ICD-9-CM other diagnosis",
+      BJ: "ICD-9-CM admitting diagnosis", BN: "ICD-9-CM external cause",
+      BR: "ICD-9-CM principal procedure", BQ: "ICD-9-CM other procedure",
+      DR: "Diagnosis related group (DRG)",
+    } },
+  } },
+  CLM: { 4: {
+    label: "Place of service",
+    parts: ["Place of service", "Facility code qualifier", "Claim frequency"],
+    codes: {
+      0: {
+        "11": "Office", "12": "Home", "19": "Off-campus outpatient hospital",
+        "20": "Urgent care", "21": "Inpatient hospital", "22": "On-campus outpatient hospital",
+        "23": "Emergency room", "24": "Ambulatory surgical center", "31": "Skilled nursing facility",
+        "32": "Nursing facility", "41": "Ambulance (land)", "49": "Independent clinic",
+        "50": "Federally qualified health center", "51": "Inpatient psychiatric facility",
+        "62": "Outpatient rehabilitation", "65": "End-stage renal disease facility",
+        "71": "Public health clinic", "81": "Independent laboratory", "99": "Other",
+      },
+      1: { A: "Uniform billing bill type", B: "Professional place of service" },
+      2: { "1": "Original", "6": "Corrected", "7": "Replacement", "8": "Void" },
+    },
+  } },
+  SVD: { 2: {
+    label: "Adjudicated procedure",
+    parts: ["Qualifier", "Procedure code", "Modifier", "Modifier", "Modifier", "Modifier", "Description"],
+    codes: { 0: { HC: "HCPCS/CPT", HP: "HIPPS rate code", N4: "NDC (11-digit)" } },
+  } },
+};
+
+// The composite spec for one element, or null if that element isn't one.
+function compositeSpec(segId, index) {
+  const table = COMPOSITES[segId];
+  if (!table) return null;
+  return table[index] || table["*"] || null;
+}
+
 const MAX_RENDERED_CHANGES = 500;
 const MAX_RENDERED_OUTPUT = 400000;
 
@@ -1638,17 +1795,33 @@ function loadFile(name, raw) {
     `<span><b>${state.doc.segments.length.toLocaleString()}</b> segments</span>`,
     `<span><b>${formatBytes(raw.length)}</b></span>`,
     `<span>transaction <b>${escapeHtml(transaction)}</b></span>`,
+    `<span>version <b>${escapeHtml(versionLabel(state.doc.version))}</b></span>`,
   ].join("");
 
-  $("delims").innerHTML = [
+  // Repetition is only listed when the file actually declares one: pre-5010
+  // interchanges have no such separator, and showing an empty slot for them
+  // would imply the file is missing something it never had.
+  const delims = [
     ["element", state.doc.elementSep],
     ["component", state.doc.componentSep],
     ["terminator", state.doc.segmentTerminator],
-  ].map(([name, char]) =>
+  ];
+  if (state.doc.repetitionSep) delims.push(["repetition", state.doc.repetitionSep]);
+
+  $("delims").innerHTML = delims.map(([name, char]) =>
     `<span class="delim"><b>${escapeHtml(visibleChar(char))}</b><span>${name}</span></span>`
   ).join("");
 
   syncRunButton();
+}
+
+// ISA12 carries the interchange version as a zero-padded code. Show the
+// name people actually use, and fall back to the raw code for anything
+// outside the two versions in circulation.
+function versionLabel(code) {
+  if (code === "00501") return "5010";
+  if (code === "00401") return "4010";
+  return code || "unknown";
 }
 
 function visibleChar(char) {
@@ -1827,7 +2000,7 @@ function renderRow(index, needle, alt) {
 
   const sep = escapeHtml(state.doc.elementSep);
   const elements = seg.elements
-    .map((value) => highlight(value, needle))
+    .map((value) => componentHtml(value, needle))
     .join(`<span class="sepc">${sep}</span>`);
 
   // The role (Subscriber, Service date) is more use than the generic name
@@ -1860,20 +2033,33 @@ function inspectSegment(index) {
   const rows = seg.elements.map((value, i) => {
     const position = `${seg.id}-${String(i + 1).padStart(2, "0")}`;
     const meaning = codes[i] && codes[i][value] ? codes[i][value] : "";
-    const components = value.includes(state.doc.componentSep)
-      ? value.split(state.doc.componentSep)
-      : null;
+    const components = splitComponents(value, state.doc.componentSep);
+    const spec = components ? compositeSpec(seg.id, i) : null;
 
-    return `<tr>
+    const head = `<tr>
       <td class="pos">${escapeHtml(position)}</td>
-      <td class="val">${value === "" ? '<span class="empty">empty</span>' : escapeHtml(value)}${
-        components
-          ? `<span class="comp">${components.map((c, n) =>
-              `${n + 1}. ${escapeHtml(c)}`).join(" &middot; ")}</span>`
-          : ""
-      }</td>
-      <td class="mean">${escapeHtml(meaning)}</td>
+      <td class="val">${value === "" ? '<span class="empty">empty</span>' : componentHtml(value)}</td>
+      <td class="mean">${escapeHtml(spec ? spec.label : meaning)}</td>
     </tr>`;
+
+    if (!components) return head;
+
+    // X12 numbers sub-elements from 1 as well: SV1-01-2 is the procedure
+    // code inside the composite at SV1-01.
+    const subs = components.map((part, n) => {
+      const name = spec && spec.parts[n] ? spec.parts[n] : `Component ${n + 1}`;
+      const decoded = spec && spec.codes && spec.codes[n] ? spec.codes[n][part] : "";
+      const last = n === components.length - 1 ? " sub-last" : "";
+      return `<tr class="sub${last}">
+        <td class="pos">${escapeHtml(`${position}-${n + 1}`)}</td>
+        <td class="val">${part === "" ? '<span class="empty">empty</span>' : escapeHtml(part)}</td>
+        <td class="mean"><span class="part">${escapeHtml(name)}${
+          decoded ? ` &middot; <b>${escapeHtml(decoded)}</b>` : ""
+        }</span></td>
+      </tr>`;
+    }).join("");
+
+    return head + subs;
   }).join("");
 
   $("inspectTitle").innerHTML =
@@ -1902,6 +2088,20 @@ function highlight(value, needle) {
   return escapeHtml(value.slice(0, at)) +
     "<mark>" + escapeHtml(value.slice(at, at + needle.length)) + "</mark>" +
     escapeHtml(value.slice(at + needle.length));
+}
+
+// An element value with its component separators marked, so `HC:99213:25`
+// reads as three values rather than one run of characters. Falls back to
+// plain highlighting when there is nothing to split, or when the filter
+// needle itself spans a separator -- splitting there would cut a live match
+// in half and lose the highlight.
+function componentHtml(value, needle) {
+  const sep = state.doc.componentSep;
+  const parts = splitComponents(value, sep);
+  if (!parts || (needle && needle.includes(sep))) return highlight(value, needle);
+  return parts
+    .map((part) => highlight(part, needle))
+    .join(`<span class="csep">${escapeHtml(sep)}</span>`);
 }
 
 /* ---- rule cards ---------------------------------------------------- */
@@ -1940,7 +2140,8 @@ function buildRules() {
       find: $("findText").value,
       replace: $("replaceText").value,
       caseSensitive: $("caseOn").checked,
-      wholeElement: $("wholeOn").checked,
+      wholeElement: $("modeElement").checked,
+      wholeComponent: $("modeComponent").checked,
       segmentIds: $("scopeText").value.split(/[\s,]+/).filter(Boolean),
     }));
   }

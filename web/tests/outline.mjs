@@ -21,12 +21,22 @@ function lift(name, opener) {
 const src = [
   lift("SEGMENT_NAMES", "const SEGMENT_NAMES = {") + ";",
   lift("QUALIFIERS", "const QUALIFIERS = {") + ";",
+  lift("COMPOSITES", "const COMPOSITES = {") + ";",
+  lift("compositeSpec", "function compositeSpec(segId, index)"),
   lift("buildOutline", "function buildOutline(segments)"),
   lift("segmentRole", "function segmentRole(seg)"),
   lift("splitN", "function splitN(text, sep, maxsplit)"),
   lift("detectDelimiters", "function detectDelimiters(raw)"),
+  lift("splitComponents", "function splitComponents(value, componentSep)"),
   lift("parse", "function parse(raw)"),
-  "export { buildOutline, segmentRole, parse, SEGMENT_NAMES };",
+  lift("escapeHtml", "function escapeHtml(text)"),
+  lift("highlight", "function highlight(value, needle)"),
+  lift("componentHtml", "function componentHtml(value, needle)"),
+  lift("versionLabel", "function versionLabel(code)"),
+  // componentHtml reads the live document off `state`; the app builds that
+  // at load time, so the harness supplies one it can point at a fixture.
+  "const state = { doc: null };",
+  "export { buildOutline, segmentRole, parse, SEGMENT_NAMES, COMPOSITES, compositeSpec, componentHtml, versionLabel, state };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -100,6 +110,49 @@ check("segment with no qualifier table", role("N3", "123 MAIN ST"), "");
 check("segment with no elements", role("NM1"), "");
 check("names cover the sample's segments",
   [...new Set(doc.segments.map((s) => s.id))].filter((id) => !m.SEGMENT_NAMES[id]), []);
+
+console.log("\n[6] composite specs");
+const spec = (id, i) => m.compositeSpec(id, i);
+check("SV1-01 is the procedure composite", spec("SV1", 0).label, "Procedure");
+check("SV1-02 is not a composite", spec("SV1", 1), null);
+check("CLM-05 is place of service", spec("CLM", 4).label, "Place of service");
+check("CLM-01 is not a composite", spec("CLM", 0), null);
+check("N3 has no composites at all", spec("N3", 0), null);
+// HI uses the "*" wildcard: every element is the same kind of composite.
+check("HI-01 resolves via the wildcard", spec("HI", 0).label, "Diagnosis / procedure");
+check("HI-08 resolves via the wildcard too", spec("HI", 7).label, "Diagnosis / procedure");
+
+check("SV1 qualifier HC decodes", spec("SV1", 0).codes[0].HC, "HCPCS/CPT");
+check("HI qualifier ABK decodes", spec("HI", 0).codes[0].ABK, "ICD-10-CM principal diagnosis");
+check("CLM place of service 11 decodes", spec("CLM", 4).codes[0]["11"], "Office");
+check("CLM claim frequency 7 decodes", spec("CLM", 4).codes[2]["7"], "Replacement");
+check("component names are ordered", spec("SV1", 0).parts.slice(0, 3),
+  ["Qualifier", "Procedure code", "Modifier"]);
+
+console.log("\n[7] composite rendering");
+m.state.doc = doc; // componentHtml reads the separator off the live document
+
+check("a simple value renders unchanged", m.componentHtml("99213", ""), "99213");
+check("a composite gets its separators marked",
+  m.componentHtml("HC:99213:25", ""),
+  'HC<span class="csep">:</span>99213<span class="csep">:</span>25');
+check("html in a value is still escaped",
+  m.componentHtml("A<B:C", ""), 'A&lt;B<span class="csep">:</span>C');
+check("the filter needle highlights inside a component",
+  m.componentHtml("HC:99213", "99213"),
+  'HC<span class="csep">:</span><mark>99213</mark>');
+// A needle spanning the separator can't survive the split, so it falls back.
+check("a needle spanning components falls back to whole-value matching",
+  m.componentHtml("HC:99213", "hc:99213"),
+  "<mark>HC:99213</mark>");
+check("empty trailing component renders",
+  m.componentHtml("ABK:", ""), 'ABK<span class="csep">:</span>');
+
+console.log("\n[8] version label");
+check("5010 code", m.versionLabel("00501"), "5010");
+check("4010 code", m.versionLabel("00401"), "4010");
+check("unrecognised code shown raw", m.versionLabel("00301"), "00301");
+check("missing code", m.versionLabel(""), "unknown");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -33,11 +33,11 @@ const source = html.slice(start, end);
 
 const engine = await import(
   "data:text/javascript;base64," +
-  Buffer.from(source + "\nexport { parse, serialize, detectDelimiters, processText, buildOutputName, Dtp472ServiceLineShiftRule, StringReplaceRule, shiftDate8 };").toString("base64")
+  Buffer.from(source + "\nexport { parse, serialize, detectDelimiters, splitComponents, processText, buildOutputName, Dtp472ServiceLineShiftRule, StringReplaceRule, shiftDate8 };").toString("base64")
 );
 
 const {
-  parse, serialize, processText, buildOutputName,
+  parse, serialize, processText, buildOutputName, splitComponents,
   Dtp472ServiceLineShiftRule, StringReplaceRule,
 } = engine;
 
@@ -190,6 +190,62 @@ console.log("\n[9] output naming");
 check("matches naming.py pattern", /^sample_837p_processed_\d{8}-\d{6}\.edi$/.test(buildOutputName("sample_837p.edi")), true);
 check("extensionless input gets .edi", /^claims_processed_\d{8}-\d{6}\.edi$/.test(buildOutputName("claims")), true);
 check("dotfile is treated as a stem", /^\.ediignore_processed_\d{8}-\d{6}\.edi$/.test(buildOutputName(".ediignore")), true);
+
+console.log("\n[10] composite elements");
+check("splitComponents returns null for a simple element", splitComponents("99213", ":"), null);
+check("splitComponents splits a composite", splitComponents("HC:99213:25", ":"), ["HC", "99213", "25"]);
+check("splitComponents tolerates a null separator", splitComponents("HC:99213", null), null);
+check("trailing empty component is preserved", splitComponents("ABK:", ":"), ["ABK", ""]);
+
+// Composites must survive parse -> serialize untouched: they are stored as
+// plain strings precisely so the round trip cannot disturb them.
+check("composite survives the round trip", serialize(parse(raw)) === raw, true);
+const hi = parse(raw).segments.find((s) => s.id === "HI");
+check("HI composite is one element, not split", hi.elements, ["ABK:J209"]);
+check("HI composite splits on demand", splitComponents(hi.elements[0], ":"), ["ABK", "J209"]);
+
+console.log("\n[11] whole-component matching");
+// The point of the mode: 99213 is a component of SV1-01, not the whole
+// element, so whole-element can never match it and substring is too broad.
+out = processText(raw, [new StringReplaceRule({ find: "99213", replace: "99214", wholeElement: true })]);
+check("whole-element cannot match inside a composite", out.changes.length, 0);
+
+out = processText(raw, [new StringReplaceRule({ find: "99213", replace: "99214", wholeComponent: true })]);
+check("whole-component matches inside a composite", out.output.includes("SV1*HC:99214*100*UN*1***1~"), true);
+check("only the one segment changed", out.changes.length, 1);
+check("sibling components untouched", out.output.includes("SV1*HC:87070*50*UN*1***1~"), true);
+
+// A whole-component match on a simple element behaves like whole-element.
+out = processText(raw, [new StringReplaceRule({ find: "1", replace: "9", wholeComponent: true, segmentIds: ["LX"] })]);
+check("simple element still matched exactly", out.output.includes("LX*9~"), true);
+check("and LX*2 left alone", out.output.includes("LX*2~"), true);
+
+// Substring mode would also hit the "1" inside other values; component mode must not.
+out = processText(raw, [new StringReplaceRule({ find: "ABK", replace: "BK", wholeComponent: true })]);
+check("leading component replaced", out.output.includes("HI*BK:J209~"), true);
+check("case-insensitive component match", processText(raw, [
+  new StringReplaceRule({ find: "abk", replace: "BK", wholeComponent: true, caseSensitive: false }),
+]).output.includes("HI*BK:J209~"), true);
+
+expectThrow("a search spanning components is rejected",
+  () => processText(raw, [new StringReplaceRule({ find: "HC:99213", replace: "X", wholeComponent: true })]),
+  "component separator");
+
+console.log("\n[12] repetition separator (ISA11, version-dependent)");
+check("5010 fixture exposes the repetition separator", parse(raw).repetitionSep, "^");
+check("version is read from ISA12", parse(raw).version, "00501");
+
+// Through 4010 ISA11 is the standards identifier 'U', not a separator.
+const v4010 = raw
+  .replace("*^*00501*", "*U*00401*")
+  .replace("005010X222A1", "004010X098A1");
+check("4010 reports no repetition separator", parse(v4010).repetitionSep, null);
+check("4010 version is read", parse(v4010).version, "00401");
+check("4010 file still round trips", serialize(parse(v4010)) === v4010, true);
+
+// A 5010 file is allowed to carry the 'U' placeholder too.
+check("5010 with a 'U' placeholder reports none",
+  parse(raw.replace("*^*00501*", "*U*00501*")).repetitionSep, null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
