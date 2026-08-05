@@ -1,0 +1,2149 @@
+<title>EDI Workbench</title>
+<style>
+  /* ---- tokens ------------------------------------------------------- */
+  :root {
+    --bg:        #edf1f2;
+    --panel:     #ffffff;
+    --panel-2:   #f5f9f9;
+    --line:      #d2dedf;
+    --line-soft: #e3ebec;
+    --ink:       #10161c;
+    --ink-2:     #3c4c55;
+    --slate:     #64777f;
+    --signal:    #0e7c86;
+    --signal-2:  #095a61;
+    --signal-wash:#dff0f1;
+    --shift:     #6b45e0;
+    --shift-wash:#ebe4ff;
+    --swap:      #8f6210;
+    --swap-wash: #fbeed4;
+    --danger:    #b3261e;
+    --danger-wash:#fbe4e2;
+    --shadow:    0 1px 2px rgba(16, 22, 28, .06), 0 8px 24px -16px rgba(16, 22, 28, .25);
+
+    --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, "Segoe UI Variable Text", "Segoe UI", -apple-system, Roboto, sans-serif;
+
+    --step--1: .75rem;
+    --step-0:  .875rem;
+    --step-1:  1rem;
+    --step-2:  1.25rem;
+    --step-3:  1.75rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #0c1214;
+      --panel:     #121a1d;
+      --panel-2:   #172125;
+      --line:      #24343a;
+      --line-soft: #1c282c;
+      --ink:       #e6eff0;
+      --ink-2:     #b7c7cb;
+      --slate:     #7c939a;
+      --signal:    #35c2ce;
+      --signal-2:  #7fe0e8;
+      --signal-wash:#0d2f33;
+      --shift:     #a98bff;
+      --shift-wash:#241a44;
+      --swap:      #e0a94b;
+      --swap-wash: #33260e;
+      --danger:    #ff8a80;
+      --danger-wash:#3a1613;
+      --shadow:    0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg:        #0c1214;
+    --panel:     #121a1d;
+    --panel-2:   #172125;
+    --line:      #24343a;
+    --line-soft: #1c282c;
+    --ink:       #e6eff0;
+    --ink-2:     #b7c7cb;
+    --slate:     #7c939a;
+    --signal:    #35c2ce;
+    --signal-2:  #7fe0e8;
+    --signal-wash:#0d2f33;
+    --shift:     #a98bff;
+    --shift-wash:#241a44;
+    --swap:      #e0a94b;
+    --swap-wash: #33260e;
+    --danger:    #ff8a80;
+    --danger-wash:#3a1613;
+    --shadow:    0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  :root[data-theme="light"] {
+    --bg:        #edf1f2;
+    --panel:     #ffffff;
+    --panel-2:   #f5f9f9;
+    --line:      #d2dedf;
+    --line-soft: #e3ebec;
+    --ink:       #10161c;
+    --ink-2:     #3c4c55;
+    --slate:     #64777f;
+    --signal:    #0e7c86;
+    --signal-2:  #095a61;
+    --signal-wash:#dff0f1;
+    --shift:     #6b45e0;
+    --shift-wash:#ebe4ff;
+    --swap:      #8f6210;
+    --swap-wash: #fbeed4;
+    --danger:    #b3261e;
+    --danger-wash:#fbe4e2;
+    --shadow:    0 1px 2px rgba(16, 22, 28, .06), 0 8px 24px -16px rgba(16, 22, 28, .25);
+  }
+
+  /* ---- base --------------------------------------------------------- */
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--step-0);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .label {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--slate);
+  }
+
+  /* ---- shell -------------------------------------------------------- */
+  .shell {
+    display: grid;
+    grid-template-columns: 372px minmax(0, 1fr);
+    height: 100dvh;
+  }
+
+  .rail {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 22px 20px 20px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+  }
+
+  .stage {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* ---- masthead ----------------------------------------------------- */
+  .masthead { display: flex; align-items: flex-start; gap: 12px; }
+  .masthead > div { flex: 1; min-width: 0; }
+
+  .wordmark {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    font-weight: 700;
+    letter-spacing: -.01em;
+    color: var(--ink);
+  }
+  .wordmark .sep { color: var(--signal); font-weight: 400; }
+
+  .tagline { margin: 2px 0 0; color: var(--slate); font-size: var(--step--1); }
+
+  .theme-btn {
+    flex: none;
+    width: 30px; height: 30px;
+    display: grid; place-items: center;
+    padding: 0;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .theme-btn:hover { border-color: var(--signal); color: var(--signal); }
+  .theme-btn svg { width: 15px; height: 15px; }
+
+  /* ---- rail sections ------------------------------------------------ */
+  .block { display: flex; flex-direction: column; gap: 10px; }
+
+  .block-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .card.off { opacity: .55; }
+  .card.off .field-grid, .card.off .opt-row, .card.off .hint { pointer-events: none; }
+
+  .card-head {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .card-title {
+    flex: 1;
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 600;
+    font-size: var(--step-0);
+    color: var(--ink);
+  }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.shift { background: var(--shift); }
+  .dot.swap  { background: var(--swap); }
+
+  /* ---- switch ------------------------------------------------------- */
+  .switch { position: relative; flex: none; width: 34px; height: 19px; }
+  .switch input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    margin: 0; opacity: 0; cursor: pointer;
+  }
+  .switch span {
+    position: absolute; inset: 0;
+    background: var(--line);
+    border-radius: 999px;
+    transition: background .15s ease;
+    pointer-events: none;
+  }
+  .switch span::after {
+    content: "";
+    position: absolute; top: 2px; left: 2px;
+    width: 15px; height: 15px;
+    background: var(--panel);
+    border-radius: 50%;
+    transition: transform .15s ease;
+  }
+  .switch input:checked + span { background: var(--signal); }
+  .switch input:checked + span::after { transform: translateX(15px); }
+  .switch input:focus-visible + span { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  /* ---- fields ------------------------------------------------------- */
+  .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 7px 9px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: var(--step-0);
+  }
+  input[type="text"]:hover, input[type="number"]:hover { border-color: var(--slate); }
+  input[type="text"]:focus-visible, input[type="number"]:focus-visible { border-color: var(--signal); }
+  input::placeholder { color: var(--slate); opacity: .7; }
+
+  .opt-row { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+
+  .check {
+    display: flex; align-items: center; gap: 7px;
+    font-size: var(--step--1); color: var(--ink-2);
+    cursor: pointer;
+  }
+  .check input { accent-color: var(--signal); width: 14px; height: 14px; margin: 0; }
+
+  .hint { margin: 0; font-size: var(--step--1); color: var(--slate); line-height: 1.45; }
+  .hint code { font-family: var(--mono); color: var(--ink-2); }
+
+  /* ---- drop zone ---------------------------------------------------- */
+  .drop {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 22px 14px;
+    background: var(--panel-2);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .drop:hover, .drop.hot { border-color: var(--signal); background: var(--signal-wash); }
+  .drop svg { width: 20px; height: 20px; color: var(--signal); }
+  .drop-main { font-weight: 600; }
+  .drop-sub { font-size: var(--step--1); color: var(--slate); }
+
+  .loaded {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .loaded-name {
+    font-family: var(--mono);
+    font-weight: 600;
+    word-break: break-all;
+  }
+  .loaded-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--step--1); color: var(--slate); }
+  .loaded-meta b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .delims { display: flex; gap: 6px; }
+  .delim {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 6px 4px;
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+    border-radius: 6px;
+  }
+  .delim b { font-family: var(--mono); font-size: var(--step-1); color: var(--signal); }
+  .delim span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
+
+  /* ---- buttons ------------------------------------------------------ */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 9px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--step-0);
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn svg { width: 15px; height: 15px; }
+
+  .btn.primary {
+    background: var(--signal);
+    border-color: var(--signal);
+    color: #fff;
+  }
+  /* The accent is light enough in dark mode that white-on-accent loses
+     contrast; the filled button flips to dark ink there instead. */
+  @media (prefers-color-scheme: dark) { .btn.primary { color: #06181a; } }
+  :root[data-theme="dark"] .btn.primary { color: #06181a; }
+  :root[data-theme="light"] .btn.primary { color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: var(--signal-2); border-color: var(--signal-2); color: var(--panel); }
+  .btn.link {
+    padding: 0; border: 0; background: none;
+    font-size: var(--step--1); font-weight: 500;
+    color: var(--signal); text-decoration: underline; text-underline-offset: 3px;
+  }
+  .btn.link:hover { color: var(--signal-2); }
+
+  .rail-actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+
+  .privacy {
+    display: flex; gap: 8px; align-items: flex-start;
+    font-size: var(--step--1); color: var(--slate); line-height: 1.45;
+  }
+  .privacy svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--signal); }
+
+  /* ---- stage: nothing loaded ---------------------------------------- */
+  .blank {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px;
+    height: 100%;
+    padding: 40px;
+    text-align: center;
+  }
+  .blank h2 {
+    margin: 0;
+    max-width: 26ch;
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    font-weight: 700;
+    line-height: 1.3;
+    text-wrap: balance;
+  }
+  .blank p { margin: 0; max-width: 44ch; color: var(--slate); }
+  .blank svg { width: 30px; height: 30px; color: var(--line); }
+
+  /* ---- guide dialog -------------------------------------------------- */
+  dialog.guide {
+    width: min(660px, calc(100vw - 40px));
+    max-height: min(760px, calc(100dvh - 60px));
+    padding: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    color: var(--ink);
+  }
+  dialog.guide::backdrop { background: rgba(8, 14, 16, .55); backdrop-filter: blur(2px); }
+
+  .guide-head {
+    display: flex; align-items: flex-start; gap: 16px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .guide-head > div { flex: 1; min-width: 0; }
+  .guide-head h2 {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    font-weight: 700;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  .guide-head p { margin: 6px 0 0; color: var(--ink-2); }
+
+  .guide-close {
+    flex: none;
+    width: 28px; height: 28px;
+    display: grid; place-items: center;
+    padding: 0;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .guide-close:hover { border-color: var(--signal); color: var(--signal); }
+  .guide-close svg { width: 14px; height: 14px; }
+
+  .guide-body { display: flex; flex-direction: column; gap: 22px; padding: 20px 22px 24px; }
+  .guide-body h3 { margin: 0 0 8px; font-size: var(--step-0); font-weight: 600; }
+  .guide-body > section > p { margin: 0; color: var(--ink-2); }
+  .guide-body dl { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+  .guide-body dt { font-family: var(--mono); font-size: var(--step--1); color: var(--ink); font-weight: 600; }
+  .guide-body dd { margin: 2px 0 0; color: var(--slate); font-size: var(--step--1); line-height: 1.5; }
+  .guide-body code { font-family: var(--mono); color: var(--ink-2); }
+
+  .steps { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .steps li {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 14px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+  }
+  .steps li:last-child { border-bottom: 1px solid var(--line); }
+  .steps .n {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    color: var(--signal);
+    letter-spacing: .06em;
+    padding-top: 2px;
+  }
+  .steps b { display: block; font-weight: 600; }
+  .steps span { color: var(--slate); font-size: var(--step--1); }
+
+  /* ---- document browser ---------------------------------------------- */
+  .doc-view {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .outline {
+    position: sticky;
+    top: 0;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+  }
+  .outline-title { padding: 4px 6px 6px; }
+
+  .onode {
+    display: flex; align-items: baseline; gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    background: none;
+    border: 0;
+    border-radius: 5px;
+    color: var(--ink-2);
+    font-family: var(--sans);
+    font-size: var(--step--1);
+    text-align: left;
+    cursor: pointer;
+  }
+  .onode:hover { background: var(--panel-2); color: var(--ink); }
+  .onode[aria-pressed="true"] { background: var(--signal-wash); color: var(--signal-2); font-weight: 600; }
+  .onode .tick {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--slate);
+    font-variant-numeric: tabular-nums;
+  }
+  .onode[aria-pressed="true"] .tick { color: var(--signal); }
+  .onode .oname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* transaction / claim / service line */
+  .onode.depth-0 { padding-left: 8px; font-weight: 600; color: var(--ink); }
+  .onode.depth-1 { padding-left: 20px; }
+  .onode.depth-2 { padding-left: 34px; }
+  .onode .flag {
+    flex: none;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--signal);
+  }
+
+  .doc-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .doc-toolbar input[type="text"] { flex: 1; min-width: 160px; }
+  .doc-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* A ledger, not a stack of cards: uniform 24px rows, hairline separators,
+     zebra striping to keep the eye on a line across four columns. The fixed
+     height is load-bearing -- the list is virtualized against it. */
+  .rows-vp {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .rows-window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 46px 62px 132px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    height: 24px;
+    padding: 0 10px 0 7px;
+    background: var(--panel);
+    border: 0;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--line-soft);
+    border-radius: 0;
+    color: var(--ink-2);
+    font-family: var(--sans);
+    text-align: left;
+    cursor: pointer;
+  }
+  /* Striping is assigned by absolute list position, not :nth-child -- the
+     window's DOM children restart at 0 on every repaint. */
+  .row.alt { background: var(--panel-2); }
+  .row:hover { background: var(--signal-wash); border-left-color: var(--slate); }
+  .row.touched-shift { border-left-color: var(--shift); }
+  .row.touched-swap  { border-left-color: var(--swap); }
+  .row.envelope .row-id { color: var(--slate); }
+
+  .row-n {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--slate);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .row-id {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: .02em;
+  }
+  .row-role {
+    font-size: 11px;
+    color: var(--slate);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row-el {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ink-2);
+  }
+  .row-el mark {
+    background: var(--swap-wash);
+    color: var(--swap);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  /* ---- element inspector --------------------------------------------- */
+  dialog.inspect {
+    width: min(720px, calc(100vw - 40px));
+    max-height: min(720px, calc(100dvh - 60px));
+    padding: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    color: var(--ink);
+  }
+  dialog.inspect::backdrop { background: rgba(8, 14, 16, .55); backdrop-filter: blur(2px); }
+
+  .inspect-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .inspect-head .grow { flex: 1; min-width: 0; }
+  .inspect-head b {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    font-weight: 700;
+  }
+  .inspect-head p { margin: 1px 0 0; font-size: var(--step--1); color: var(--slate); }
+
+  .inspect-body { padding: 6px 20px 20px; overflow-y: auto; }
+
+  .etable { width: 100%; border-collapse: collapse; }
+  .etable th {
+    padding: 8px 8px 6px 0;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--slate);
+    text-align: left;
+    font-weight: 400;
+  }
+  .etable td {
+    padding: 6px 8px 6px 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: var(--step--1);
+    vertical-align: top;
+  }
+  .etable tr:last-child td { border-bottom: 0; }
+  .etable .pos {
+    font-family: var(--mono);
+    color: var(--slate);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .etable .val {
+    font-family: var(--mono);
+    color: var(--ink);
+    word-break: break-all;
+  }
+  .etable .val .empty { color: var(--slate); font-style: italic; }
+  .etable .comp {
+    display: block;
+    margin-top: 2px;
+    color: var(--slate);
+    font-size: 11px;
+  }
+  .etable .mean { color: var(--slate); }
+
+  /* ---- stage: results ----------------------------------------------- */
+  .stage-head {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .stage-head .grow { flex: 1; min-width: 0; }
+
+  .tiles { display: flex; gap: 10px; padding: 18px 24px 6px; flex-wrap: wrap; }
+  .tile {
+    flex: 1 1 150px;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 12px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line);
+    border-radius: 7px;
+  }
+  .tile b {
+    font-family: var(--mono);
+    font-size: var(--step-3);
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile.is-shift { border-left-color: var(--shift); }
+  .tile.is-shift b { color: var(--shift); }
+  .tile.is-swap { border-left-color: var(--swap); }
+  .tile.is-swap b { color: var(--swap); }
+  .tile.is-total { border-left-color: var(--signal); }
+  .tile.is-total b { color: var(--signal); }
+
+  .tabs { display: flex; gap: 4px; padding: 14px 24px 0; }
+  .tab {
+    padding: 7px 12px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--slate);
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] {
+    background: var(--panel);
+    border-color: var(--line);
+    color: var(--signal);
+  }
+
+  .panes { flex: 1; min-height: 0; padding: 12px 24px 24px; overflow-y: auto; }
+
+  /* ---- segment inspector -------------------------------------------- */
+  .seg-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .seg {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .seg-idx {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    padding: 10px 4px;
+    background: var(--panel-2);
+    border-right: 1px solid var(--line-soft);
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    color: var(--slate);
+    font-variant-numeric: tabular-nums;
+  }
+  .seg-idx b { color: var(--ink-2); font-weight: 600; }
+
+  .seg-body { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; min-width: 0; }
+
+  .seg-rules { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .chip.shift { background: var(--shift-wash); color: var(--shift); }
+  .chip.swap  { background: var(--swap-wash);  color: var(--swap); }
+
+  .line {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    line-height: 1.7;
+    word-break: break-all;
+  }
+  .line-mark {
+    flex: none;
+    width: 16px;
+    color: var(--slate);
+    user-select: none;
+  }
+  .line.before { color: var(--slate); }
+  .line.before .el.hit { background: var(--danger-wash); color: var(--danger); }
+  .line.after .el.hit { background: var(--signal-wash); color: var(--signal-2); font-weight: 600; }
+  .line.after .el.hit.shift { background: var(--shift-wash); color: var(--shift); }
+  .line.after .el.hit.swap  { background: var(--swap-wash);  color: var(--swap); }
+
+  .el { padding: 1px 2px; border-radius: 3px; }
+  .el.id { font-weight: 700; color: var(--ink); }
+  .line.before .el.id { color: var(--slate); font-weight: 600; }
+  .sepc { color: var(--slate); opacity: .55; }
+
+  .raw {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-x: auto;
+    color: var(--ink-2);
+  }
+
+  .note {
+    padding: 10px 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: var(--step--1);
+    color: var(--slate);
+  }
+
+  .banner {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 11px 13px;
+    background: var(--danger-wash);
+    border: 1px solid var(--danger);
+    border-radius: 7px;
+    color: var(--danger);
+    font-size: var(--step--1);
+    line-height: 1.45;
+  }
+  .banner svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+  .banner b { display: block; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 26px;
+    transform: translateX(-50%) translateY(8px);
+    padding: 9px 16px;
+    background: var(--ink);
+    color: var(--bg);
+    border-radius: 999px;
+    font-size: var(--step--1);
+    font-weight: 600;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  [hidden] { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; height: auto; }
+    .rail { border-right: 0; border-bottom: 1px solid var(--line); overflow-y: visible; }
+    .stage { overflow: visible; }
+    .panes { overflow-y: visible; }
+    .empty { height: auto; padding: 32px 24px; }
+    .tiles, .tabs, .stage-head, .panes { padding-left: 18px; padding-right: 18px; }
+  }
+</style>
+
+<div class="shell">
+  <!-- ============ control rail ============ -->
+  <aside class="rail">
+    <div class="masthead">
+      <div>
+        <h1 class="wordmark">EDI<span class="sep">*</span>WORKBENCH</h1>
+        <p class="tagline">X12 837 segment editor &middot; runs entirely in this tab</p>
+      </div>
+      <button class="theme-btn" id="themeBtn" type="button" title="Switch theme" aria-label="Switch theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- file -->
+    <section class="block">
+      <span class="label">Source file</span>
+
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose an EDI file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 3v5h5" /><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2Z" />
+          <path d="M12 11v6" /><path d="m9.5 13.5 2.5-2.5 2.5 2.5" />
+        </svg>
+        <span class="drop-main">Drop a file or click to browse</span>
+        <span class="drop-sub">.edi &middot; .837 &middot; .txt &middot; .x12 &middot; .dat</span>
+      </div>
+      <input type="file" id="fileInput" accept=".edi,.837,.txt,.x12,.dat,text/plain" hidden />
+
+      <div class="loaded" id="loaded" hidden>
+        <span class="loaded-name" id="fileName"></span>
+        <div class="loaded-meta" id="fileMeta"></div>
+        <div class="delims" id="delims"></div>
+      </div>
+
+      <div id="parseError" hidden></div>
+
+      <div>
+        <button class="btn link" id="sampleBtn" type="button">Load a sample 837P instead</button>
+      </div>
+    </section>
+
+    <!-- rules -->
+    <section class="block">
+      <div class="block-head">
+        <span class="label">Rules</span>
+        <span class="label" id="ruleCount"></span>
+      </div>
+
+      <!-- rule: date shift -->
+      <div class="card" id="shiftCard">
+        <div class="card-head">
+          <span class="card-title"><i class="dot shift"></i>Service date shift</span>
+          <label class="switch">
+            <input type="checkbox" id="shiftOn" checked aria-label="Enable service date shift" />
+            <span></span>
+          </label>
+        </div>
+        <div class="field-grid">
+          <label class="field">
+            <span class="label">Shift by (days)</span>
+            <input type="number" id="shiftDays" value="1" step="1" />
+          </label>
+        </div>
+        <p class="hint">Moves every <code>DTP*472</code> date inside a service line (loop 2400) &mdash; the ones opened by <code>LX</code> and closed by <code>CLM</code>, <code>HL</code>, or <code>SE</code>. Claim-level dates stay put. Negative values shift backwards.</p>
+      </div>
+
+      <!-- rule: find & replace -->
+      <div class="card" id="swapCard">
+        <div class="card-head">
+          <span class="card-title"><i class="dot swap"></i>Find &amp; replace</span>
+          <label class="switch">
+            <input type="checkbox" id="swapOn" aria-label="Enable find and replace" />
+            <span></span>
+          </label>
+        </div>
+        <div class="field-grid">
+          <label class="field">
+            <span class="label">Find</span>
+            <input type="text" id="findText" placeholder="DOE" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span class="label">Replace with</span>
+            <input type="text" id="replaceText" placeholder="SMITH" spellcheck="false" />
+          </label>
+        </div>
+        <label class="field">
+          <span class="label">Only in segments (optional)</span>
+          <input type="text" id="scopeText" placeholder="NM1, N3, REF" spellcheck="false" />
+        </label>
+        <div class="opt-row">
+          <label class="check"><input type="checkbox" id="caseOn" checked /> Match case</label>
+          <label class="check"><input type="checkbox" id="wholeOn" /> Whole element only</label>
+        </div>
+        <p class="hint">Rewrites element values only. Segment IDs and the fixed-width <code>ISA</code> header are never touched &mdash; editing either produces a file the receiver can't parse.</p>
+      </div>
+    </section>
+
+    <div class="rail-actions">
+      <button class="btn primary" id="runBtn" type="button" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m5 3 14 9-14 9V3Z" />
+        </svg>
+        Run rules
+      </button>
+      <p class="privacy">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3 4 6v6c0 4.5 3.2 8.4 8 9 4.8-.6 8-4.5 8-9V6l-8-3Z" />
+        </svg>
+        Your file is read in the browser and never uploaded. Close the tab and nothing is left behind.
+      </p>
+    </div>
+  </aside>
+
+  <!-- ============ document stage ============ -->
+  <main class="stage">
+    <div class="blank" id="blank">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 3v5h5" /><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2Z" />
+        <path d="M8 13h8" /><path d="M8 17h5" />
+      </svg>
+      <h2>No interchange loaded</h2>
+      <p>Drop an 837 on the left and its segments appear here, decoded and grouped by claim.</p>
+      <button class="btn" id="blankGuideBtn" type="button">Read the guide</button>
+    </div>
+
+    <div id="workspace" hidden style="display:flex;flex-direction:column;min-height:0;flex:1;">
+      <div class="stage-head">
+        <div class="grow">
+          <span class="label" id="stageLabel">Loaded</span>
+          <div id="stageName" style="font-family:var(--mono);font-weight:600;word-break:break-all;"></div>
+        </div>
+        <button class="btn" id="guideBtn" type="button" title="How this works">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.45V14" /><path d="M12 17v.5" />
+          </svg>
+          Guide
+        </button>
+        <button class="btn" id="copyBtn" type="button" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+          </svg>
+          Copy
+        </button>
+        <button class="btn primary" id="downloadBtn" type="button" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3v12" /><path d="m7 12 5 5 5-5" /><path d="M4 21h16" />
+          </svg>
+          Download
+        </button>
+      </div>
+
+      <div class="tiles" id="tiles" hidden></div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab" id="tabDocument" role="tab" aria-selected="true" type="button">Document</button>
+        <button class="tab" id="tabChanges"  role="tab" aria-selected="false" type="button" hidden>Changes</button>
+        <button class="tab" id="tabOutput"   role="tab" aria-selected="false" type="button" hidden>Output</button>
+      </div>
+
+      <div class="panes">
+        <div id="paneDocument"></div>
+        <div id="paneChanges" hidden></div>
+        <div id="paneOutput" hidden></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ guide ============ -->
+<dialog class="guide" id="guideDialog" aria-labelledby="guideTitle">
+  <div class="guide-head">
+    <div>
+      <h2 id="guideTitle">Edit an 837 without opening a text editor.</h2>
+      <p>Load an interchange, pick the changes you want, and get a byte-faithful copy back &mdash; whitespace, delimiters, and every segment you didn't touch preserved exactly as they came in.</p>
+    </div>
+    <button class="guide-close" id="guideClose" type="button" aria-label="Close the guide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <path d="m6 6 12 12" /><path d="M18 6 6 18" />
+      </svg>
+    </button>
+  </div>
+
+  <div class="guide-body">
+    <ol class="steps">
+      <li><span class="n">01</span><span><b>Load</b><span>Delimiters are read from the ISA header, not assumed &mdash; a file using <code>|</code> and <code>\n</code> parses just as well as <code>*</code> and <code>~</code>.</span></span></li>
+      <li><span class="n">02</span><span><b>Browse</b><span>Segments are decoded and grouped by transaction, claim, and service line. Use the outline to jump, or the filter to narrow by segment ID or value.</span></span></li>
+      <li><span class="n">03</span><span><b>Configure and run</b><span>Shift service dates, swap a string, or both. Rules run in order, top to bottom.</span></span></li>
+      <li><span class="n">04</span><span><b>Review, then download</b><span>Changed segments are marked in the document and shown before and after under Changes. Nothing is written until you ask for it.</span></span></li>
+    </ol>
+
+    <section>
+      <h3>What the rules do</h3>
+      <dl>
+        <dt>Service date shift</dt>
+        <dd>Moves every <code>DTP*472</code> date that sits inside a service line (loop 2400) &mdash; the ones opened by <code>LX</code> and closed by <code>CLM</code>, <code>HL</code>, or <code>SE</code>. Claim-level dates are left alone. Negative values shift backwards. Impossible dates are skipped rather than failing the file.</dd>
+        <dt>Find &amp; replace</dt>
+        <dd>Rewrites element values only. Segment IDs are never touched, and neither is the fixed-width <code>ISA</code> header &mdash; changing a value's length there breaks the interchange for the receiver. Scope it to specific segments to keep a common string from being rewritten everywhere.</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h3>Two things it refuses to do</h3>
+      <p>Replacement text containing this file's element separator or segment terminator is rejected instead of written, because it would split the segment it landed in. The component separator is allowed, since it is legal inside an element value.</p>
+    </section>
+
+    <section>
+      <h3>Where your file goes</h3>
+      <p>Nowhere. It is read in this tab, edited in memory, and handed back through your browser's download. Nothing is uploaded and nothing persists after you close the tab.</p>
+    </section>
+  </div>
+</dialog>
+
+<!-- ============ element inspector ============ -->
+<dialog class="inspect" id="inspectDialog" aria-labelledby="inspectTitle">
+  <div class="inspect-head">
+    <div class="grow">
+      <div id="inspectTitle"></div>
+      <p id="inspectSub"></p>
+    </div>
+    <button class="guide-close" id="inspectClose" type="button" aria-label="Close the segment inspector">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <path d="m6 6 12 12" /><path d="M18 6 6 18" />
+      </svg>
+    </button>
+  </div>
+  <div class="inspect-body" id="inspectBody"></div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ==================================================================== *
+ * engine:start
+ * A direct port of the Python edi_engine package. No DOM access below
+ * this line until engine:end, so it can be lifted out and unit-tested.
+ * ==================================================================== */
+
+/* ---- document ------------------------------------------------------ */
+
+// Python's str.split(sep, maxsplit) keeps the unsplit remainder as the
+// final element; JS's split(sep, limit) throws it away. detect_delimiters
+// depends on that remainder, so it gets its own implementation.
+function splitN(text, sep, maxsplit) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < maxsplit; i++) {
+    const at = text.indexOf(sep, start);
+    if (at === -1) break;
+    out.push(text.slice(start, at));
+    start = at + sep.length;
+  }
+  out.push(text.slice(start));
+  return out;
+}
+
+// Detect the three delimiters from the ISA segment rather than assuming
+// '*' and '~'. ISA is the one fixed-width segment in X12: its 16th element
+// is always exactly one character (the component separator), and the
+// segment terminator is the character immediately after it.
+function detectDelimiters(raw) {
+  if (!raw.startsWith("ISA")) {
+    throw new Error("File does not start with an ISA segment; not a valid X12 interchange.");
+  }
+  const elementSep = raw[3];
+  const parts = splitN(raw.slice(4), elementSep, 15);
+  if (parts.length < 16) {
+    throw new Error("Malformed ISA segment; expected 16 elements.");
+  }
+  const last = parts[15];
+  if (last.length < 2) {
+    throw new Error("Malformed ISA segment; missing component separator/segment terminator.");
+  }
+  return { elementSep, componentSep: last[0], segmentTerminator: last[1] };
+}
+
+function parse(raw) {
+  const { elementSep, componentSep, segmentTerminator } = detectDelimiters(raw);
+
+  const pieces = raw.split(segmentTerminator);
+  const tail = pieces.length ? pieces.pop() : "";
+
+  const segments = [];
+  for (const piece of pieces) {
+    const stripped = piece.replace(/^[\r\n]+/, "");
+    if (!stripped) continue;
+    const leadingWs = piece.slice(0, piece.length - stripped.length);
+    const tokens = stripped.split(elementSep);
+    segments.push({ id: tokens[0], elements: tokens.slice(1), leadingWs });
+  }
+
+  return { segments, elementSep, componentSep, segmentTerminator, tail };
+}
+
+function serialize(doc) {
+  const parts = [];
+  for (const seg of doc.segments) {
+    parts.push(seg.leadingWs);
+    parts.push([seg.id, ...seg.elements].join(doc.elementSep));
+    parts.push(doc.segmentTerminator);
+  }
+  parts.push(doc.tail);
+  return parts.join("");
+}
+
+/* ---- rules --------------------------------------------------------- */
+
+// Segments that only ever appear outside a loop-2400 (service line)
+// context in an 837P. Seeing one means we've left the current line.
+const SERVICE_LINE_BOUNDARY_IDS = new Set(["CLM", "HL", "SE"]);
+
+// Add days to a YYYYMMDD value in UTC, so a local DST boundary can never
+// move a service date. Returns null for anything that isn't a real date,
+// which the caller treats as "skip this segment" rather than an error.
+function shiftDate8(value, days) {
+  if (!/^\d{8}$/.test(value)) return null;
+  const y = +value.slice(0, 4), m = +value.slice(4, 6), d = +value.slice(6, 8);
+  if (y < 1000) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  // Rejects impossible dates (Feb 30 rolls forward into March).
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const p = (n, w) => String(n).padStart(w, "0");
+  return p(dt.getUTCFullYear(), 4) + p(dt.getUTCMonth() + 1, 2) + p(dt.getUTCDate(), 2);
+}
+
+class Dtp472ServiceLineShiftRule {
+  constructor(days = 1) {
+    this.name = "dtp472_service_line_shift";
+    this.label = "Service date shift";
+    this.kind = "shift";
+    this.days = days;
+  }
+
+  apply(segments) {
+    const marks = [];
+    let inServiceLine = false;
+
+    segments.forEach((seg, i) => {
+      if (seg.id === "LX") { inServiceLine = true; return; }
+      if (SERVICE_LINE_BOUNDARY_IDS.has(seg.id)) { inServiceLine = false; return; }
+      if (!inServiceLine || seg.id !== "DTP" || seg.elements.length < 3) return;
+
+      const [qualifier, dateFmt, value] = seg.elements;
+      if (qualifier !== "472" || dateFmt !== "D8") return;
+
+      const shifted = shiftDate8(value, this.days);
+      if (shifted === null) return; // malformed date; skip rather than fail the file
+
+      seg.elements[2] = shifted;
+      marks.push({ segment: i, elements: [2] });
+    });
+
+    return { segments: marks.length, occurrences: marks.length, marks };
+  }
+}
+
+class StringReplaceRule {
+  constructor({ find, replace = "", caseSensitive = true, wholeElement = false, segmentIds = null }) {
+    this.name = "string_replace";
+    this.label = "Find & replace";
+    this.kind = "swap";
+    this.find = find;
+    this.replace = replace;
+    this.caseSensitive = caseSensitive;
+    this.wholeElement = wholeElement;
+    this.segmentIds = segmentIds && segmentIds.length
+      ? new Set(segmentIds.map((s) => s.toUpperCase()))
+      : null;
+  }
+
+  // Called before any rule runs. Rejects a configuration that would
+  // produce a file that no longer parses.
+  check(doc) {
+    const clashes = [
+      [doc.elementSep, "element separator"],
+      [doc.segmentTerminator, "segment terminator"],
+    ];
+    for (const [char, what] of clashes) {
+      if (this.replace.includes(char)) {
+        throw new Error(
+          `Replacement text contains this file's ${what} (${char}), which would split the ` +
+          `segment it lands in. Choose replacement text without that character.`
+        );
+      }
+      if (this.find.includes(char)) {
+        throw new Error(
+          `Search text contains this file's ${what} (${char}). Element values are stored ` +
+          `already split on it, so that text can never match. Search within a single element.`
+        );
+      }
+    }
+  }
+
+  apply(segments) {
+    const marks = [];
+    let occurrences = 0;
+    if (!this.find) return { segments: 0, occurrences: 0, marks };
+
+    segments.forEach((seg, i) => {
+      if (seg.id === "ISA") return; // fixed-width; a length change corrupts it
+      if (this.segmentIds && !this.segmentIds.has(seg.id.toUpperCase())) return;
+
+      const hits = [];
+      seg.elements.forEach((value, j) => {
+        const [next, count] = this.replaceIn(value);
+        if (!count) return;
+        seg.elements[j] = next;
+        occurrences += count;
+        hits.push(j);
+      });
+      if (hits.length) marks.push({ segment: i, elements: hits });
+    });
+
+    return { segments: marks.length, occurrences, marks };
+  }
+
+  replaceIn(value) {
+    if (this.wholeElement) {
+      const same = this.caseSensitive
+        ? value === this.find
+        : value.toLowerCase() === this.find.toLowerCase();
+      return same ? [this.replace, 1] : [value, 0];
+    }
+    if (this.caseSensitive) {
+      const count = countOccurrences(value, this.find);
+      return count ? [value.split(this.find).join(this.replace), count] : [value, 0];
+    }
+    let count = 0;
+    // A function replacement keeps $&-style sequences in the user's text literal.
+    const next = value.replace(
+      new RegExp(escapeRegExp(this.find), "gi"),
+      () => { count++; return this.replace; }
+    );
+    return count ? [next, count] : [value, 0];
+  }
+}
+
+function countOccurrences(haystack, needle) {
+  if (!needle) return 0;
+  let count = 0, at = 0;
+  for (;;) {
+    const found = haystack.indexOf(needle, at);
+    if (found === -1) return count;
+    count++;
+    at = found + needle.length;
+  }
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/* ---- engine -------------------------------------------------------- */
+
+function snapshot(segments) {
+  return segments.map((seg) => ({ id: seg.id, elements: seg.elements.slice() }));
+}
+
+function sameSegment(a, b) {
+  if (a.id !== b.id || a.elements.length !== b.elements.length) return false;
+  return a.elements.every((v, i) => v === b.elements[i]);
+}
+
+// parse -> validate -> apply rules -> serialize, with a per-segment
+// before/after record of everything that moved.
+function processText(raw, rules) {
+  const doc = parse(raw);
+
+  for (const rule of rules) {
+    if (typeof rule.check === "function") rule.check(doc);
+  }
+
+  const before = snapshot(doc.segments);
+  const summary = [];
+  const ruleKindsBySegment = new Map();
+
+  for (const rule of rules) {
+    const result = rule.apply(doc.segments);
+    summary.push({
+      name: rule.name,
+      label: rule.label,
+      kind: rule.kind,
+      segments: result.segments,
+      occurrences: result.occurrences,
+    });
+    for (const mark of result.marks) {
+      let entry = ruleKindsBySegment.get(mark.segment);
+      if (!entry) { entry = { kinds: [], elements: new Map() }; ruleKindsBySegment.set(mark.segment, entry); }
+      if (!entry.kinds.includes(rule.kind)) entry.kinds.push(rule.kind);
+      for (const el of mark.elements) entry.elements.set(el, rule.kind);
+    }
+  }
+
+  const changes = [];
+  doc.segments.forEach((seg, i) => {
+    if (sameSegment(before[i], seg)) return;
+    const entry = ruleKindsBySegment.get(i) || { kinds: [], elements: new Map() };
+    changes.push({
+      index: i,
+      before: before[i],
+      after: { id: seg.id, elements: seg.elements.slice() },
+      kinds: entry.kinds,
+      elementKinds: entry.elements,
+    });
+  });
+
+  return {
+    output: serialize(doc),
+    segmentCount: doc.segments.length,
+    delimiters: {
+      element: doc.elementSep,
+      component: doc.componentSep,
+      terminator: doc.segmentTerminator,
+    },
+    summary,
+    changes,
+  };
+}
+
+// Same collision-safe naming as the desktop app: stem_processed_<stamp>.ext
+function buildOutputName(inputName) {
+  const now = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  const stamp =
+    now.getFullYear() + p(now.getMonth() + 1) + p(now.getDate()) + "-" +
+    p(now.getHours()) + p(now.getMinutes()) + p(now.getSeconds());
+
+  const dot = inputName.lastIndexOf(".");
+  const stem = dot > 0 ? inputName.slice(0, dot) : inputName;
+  const suffix = dot > 0 ? inputName.slice(dot) : ".edi";
+  return `${stem}_processed_${stamp}${suffix}`;
+}
+
+/* engine:end */
+
+/* ==================================================================== *
+ * UI
+ * ==================================================================== */
+
+const SAMPLE_837P = [
+  "ISA*00*          *00*          *ZZ*SUBMITTERID    *ZZ*RECEIVERID     *230101*1200*^*00501*000000001*0*T*:~",
+  "GS*HC*SUBMITTERID*RECEIVERID*20230101*1200*1*X*005010X222A1~",
+  "ST*837*0001*005010X222A1~",
+  "BHT*0019*00*0001*20230101*1200*CH~",
+  "NM1*41*2*SUBMITTER NAME*****46*SUBMITTERID~",
+  "PER*IC*CONTACT NAME*TE*5551234567~",
+  "NM1*40*2*RECEIVER NAME*****46*RECEIVERID~",
+  "HL*1**20*1~",
+  "NM1*85*2*BILLING PROVIDER NAME*****XX*1234567893~",
+  "N3*123 MAIN ST~",
+  "N4*ANYTOWN*CA*90210~",
+  "REF*EI*123456789~",
+  "HL*2*1*22*0~",
+  "SBR*P*18*******CI~",
+  "NM1*IL*1*DOE*JOHN****MI*123456789A~",
+  "N3*456 ELM ST~",
+  "N4*ANYTOWN*CA*90210~",
+  "DMG*D8*19800101*M~",
+  "NM1*PR*2*INSURANCE COMPANY*****PI*987654321~",
+  "CLM*PATIENTACCTNUM*150***11:B:1*Y*A*Y*Y~",
+  "HI*ABK:J209~",
+  "NM1*DN*1*REFERRING*JANE****XX*1122334455~",
+  "LX*1~",
+  "SV1*HC:99213*100*UN*1***1~",
+  "DTP*472*D8*20230101~",
+  "LX*2~",
+  "SV1*HC:87070*50*UN*1***1~",
+  "DTP*472*D8*20230101~",
+  "SE*27*0001~",
+  "GE*1*1~",
+  "IEA*1*000000001~",
+].join("\n") + "\n";
+
+// Segment names for the 837 professional/institutional families. Anything
+// not listed still renders; it just shows without a plain-English name.
+const SEGMENT_NAMES = {
+  ISA: "Interchange Control Header", GS: "Functional Group Header",
+  ST: "Transaction Set Header", BHT: "Beginning of Hierarchical Transaction",
+  NM1: "Name", PER: "Contact Information", N3: "Address", N4: "City, State, ZIP",
+  REF: "Reference Identification", HL: "Hierarchical Level", PRV: "Provider Information",
+  SBR: "Subscriber Information", PAT: "Patient Information", DMG: "Demographic Information",
+  CLM: "Claim Information", DTP: "Date or Time Period", HI: "Health Care Diagnosis Code",
+  LX: "Service Line Number", SV1: "Professional Service", SV2: "Institutional Service Line",
+  SV5: "Durable Medical Equipment Service", AMT: "Monetary Amount", CAS: "Claim Adjustment",
+  OI: "Other Insurance Coverage", CN1: "Contract Information", K3: "File Information",
+  NTE: "Note", CR1: "Ambulance Transport", CR2: "Spinal Manipulation", CRC: "Conditions Indicator",
+  MEA: "Test Result", QTY: "Quantity", FRM: "Supporting Documentation",
+  LIN: "Drug Identification", CTP: "Drug Pricing", PWK: "Paperwork", LQ: "Form Identification",
+  SVD: "Service Line Adjudication", TOO: "Tooth Identification", CUR: "Currency",
+  SE: "Transaction Set Trailer", GE: "Functional Group Trailer", IEA: "Interchange Control Trailer",
+};
+
+// Qualifier codes worth decoding inline: these are the ones that tell you
+// *whose* name or *which* date you are looking at, which is the difference
+// between a wall of NM1s and a readable claim.
+const QUALIFIERS = {
+  NM1: { 0: {
+    "41": "Submitter", "40": "Receiver", "85": "Billing provider", "87": "Pay-to provider",
+    IL: "Subscriber", PR: "Payer", QC: "Patient", DN: "Referring provider",
+    "82": "Rendering provider", "77": "Service facility", DQ: "Supervising provider",
+    P3: "Primary care provider", "71": "Attending provider", "72": "Operating provider",
+    "1P": "Provider", "2B": "Third-party administrator", "TT": "Transfer to",
+  } },
+  HL: { 2: {
+    "20": "Information source", "21": "Information receiver",
+    "22": "Subscriber", "23": "Dependent",
+  } },
+  DTP: { 0: {
+    "472": "Service date", "431": "Onset of illness", "435": "Admission", "096": "Discharge",
+    "434": "Statement period", "439": "Accident", "484": "Last menstrual period",
+    "304": "Latest visit", "453": "Acute manifestation", "090": "Assumed care",
+    "091": "Relinquished care", "471": "Prescription", "607": "Certification revision",
+  } },
+  REF: { 0: {
+    EI: "Employer ID", SY: "Social security number", "0B": "State license",
+    "1G": "Provider UPIN", G2: "Provider commercial ID", "6R": "Line item control",
+    D9: "Claim tracking number", F8: "Original reference", LU: "Location",
+    "9F": "Referral number", G1: "Prior authorization", EA: "Medical record",
+  } },
+  SBR: { 0: { P: "Primary", S: "Secondary", T: "Tertiary" } },
+  SV1: {},
+};
+
+const MAX_RENDERED_CHANGES = 500;
+const MAX_RENDERED_OUTPUT = 400000;
+
+// Row height in px. Must match `.row { height }` exactly -- the virtual
+// list multiplies by it to size the scroll container and place the window.
+const ROW_H = 24;
+// Rows drawn above and below the viewport so a fast scroll doesn't show gaps.
+const OVERSCAN = 12;
+
+const $ = (id) => document.getElementById(id);
+
+// Control segments: the envelope around the business data.
+const ENVELOPE_IDS = new Set(["ISA", "GS", "ST", "SE", "GE", "IEA"]);
+
+const state = {
+  fileName: null,
+  raw: null,
+  doc: null,
+  result: null,
+  outline: [],
+  scope: null,        // {start, end} into doc.segments, or null for the whole file
+  filter: "",
+  touched: new Map(), // segment index -> rule kind, after a run
+  visible: [],        // segment indices passing the current scope + filter
+  needle: "",         // lower-cased filter text, for match highlighting
+  window: null,       // {first, last} slice of `visible` currently in the DOM
+};
+
+/* ---- outline ------------------------------------------------------- */
+
+// Walks the interchange once and produces a flat, depth-tagged list of
+// jump targets: each ST transaction, each CLM claim inside it, and each LX
+// service line inside that. Ranges are half-open [start, end).
+function buildOutline(segments) {
+  const nodes = [];
+  const push = (depth, label, detail, start) => {
+    nodes.push({ depth, label, detail, start, end: segments.length });
+    return nodes[nodes.length - 1];
+  };
+
+  // Close any open node at this depth or deeper.
+  const closeFrom = (depth, at) => {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (nodes[i].depth >= depth && nodes[i].end === segments.length) nodes[i].end = at;
+      else if (nodes[i].depth < depth) break;
+    }
+  };
+
+  let claimNo = 0;
+  segments.forEach((seg, i) => {
+    if (seg.id === "ST") {
+      closeFrom(0, i);
+      claimNo = 0;
+      push(0, `Transaction ${seg.elements[1] || ""}`.trim(), `ST*${seg.elements[0] || ""}`, i);
+    } else if (seg.id === "CLM") {
+      closeFrom(1, i);
+      claimNo++;
+      push(1, `Claim ${claimNo}`, seg.elements[0] || "", i);
+    } else if (seg.id === "LX") {
+      closeFrom(2, i);
+      push(2, `Line ${seg.elements[0] || ""}`.trim(), "", i);
+    } else if (seg.id === "SE") {
+      closeFrom(1, i); // trailer belongs to the transaction, not the last claim
+    }
+  });
+
+  return nodes;
+}
+
+/* ---- theme --------------------------------------------------------- */
+$("themeBtn").addEventListener("click", () => {
+  const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const current = document.documentElement.dataset.theme || (prefersDark ? "dark" : "light");
+  document.documentElement.dataset.theme = current === "dark" ? "light" : "dark";
+});
+
+/* ---- toast --------------------------------------------------------- */
+let toastTimer;
+function toast(message) {
+  const el = $("toast");
+  el.textContent = message;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+function escapeHtml(text) {
+  return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function errorBanner(title, detail) {
+  return `<div class="banner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" /><path d="M12 7v6" /><path d="M12 16.5v.5" />
+    </svg>
+    <span><b>${escapeHtml(title)}</b>${escapeHtml(detail)}</span>
+  </div>`;
+}
+
+/* ---- loading a file ------------------------------------------------ */
+const drop = $("drop");
+const fileInput = $("fileInput");
+
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+});
+["dragenter", "dragover"].forEach((type) =>
+  drop.addEventListener(type, (e) => { e.preventDefault(); drop.classList.add("hot"); })
+);
+["dragleave", "drop"].forEach((type) =>
+  drop.addEventListener(type, () => drop.classList.remove("hot"))
+);
+drop.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) file.text().then((text) => loadFile(file.name, text));
+});
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (file) file.text().then((text) => loadFile(file.name, text));
+  fileInput.value = "";
+});
+$("sampleBtn").addEventListener("click", () => loadFile("sample_837p.edi", SAMPLE_837P));
+
+function loadFile(name, raw) {
+  state.fileName = name;
+  state.raw = raw;
+  state.result = null;
+  state.touched = new Map();
+  state.scope = null;
+  state.filter = "";
+
+  $("fileName").textContent = name;
+  $("loaded").hidden = false;
+  $("tiles").hidden = true;
+  $("tabChanges").hidden = true;
+  $("tabOutput").hidden = true;
+  $("copyBtn").hidden = true;
+  $("downloadBtn").hidden = true;
+  // Drop the previous file's results rather than leaving them behind hidden tabs.
+  $("paneChanges").innerHTML = "";
+  $("paneOutput").innerHTML = "";
+
+  const errorSlot = $("parseError");
+  try {
+    state.doc = parse(raw);
+  } catch (err) {
+    state.doc = null;
+    state.outline = [];
+    $("workspace").hidden = true;
+    $("blank").hidden = false;
+    errorSlot.innerHTML = errorBanner("Can't read this file. ", err.message);
+    errorSlot.hidden = false;
+    $("fileMeta").innerHTML = "";
+    $("delims").innerHTML = "";
+    syncRunButton();
+    return;
+  }
+
+  errorSlot.hidden = true;
+  errorSlot.innerHTML = "";
+
+  state.outline = buildOutline(state.doc.segments);
+  $("blank").hidden = true;
+  $("workspace").hidden = false;
+  $("stageLabel").textContent = "Loaded";
+  $("stageName").textContent = name;
+  selectTab("document");
+  renderDocument();
+
+  const st = state.doc.segments.find((s) => s.id === "ST");
+  // Escaped rather than literal: this file carries no <meta charset> (the
+  // artifact wrapper supplies the head), so it must decode identically
+  // whether it is served or opened straight off disk.
+  const transaction = st && st.elements.length ? st.elements[0] : "\u2014";
+
+  $("fileMeta").innerHTML = [
+    `<span><b>${state.doc.segments.length.toLocaleString()}</b> segments</span>`,
+    `<span><b>${formatBytes(raw.length)}</b></span>`,
+    `<span>transaction <b>${escapeHtml(transaction)}</b></span>`,
+  ].join("");
+
+  $("delims").innerHTML = [
+    ["element", state.doc.elementSep],
+    ["component", state.doc.componentSep],
+    ["terminator", state.doc.segmentTerminator],
+  ].map(([name, char]) =>
+    `<span class="delim"><b>${escapeHtml(visibleChar(char))}</b><span>${name}</span></span>`
+  ).join("");
+
+  syncRunButton();
+}
+
+function visibleChar(char) {
+  if (char === "\n") return "\\n";
+  if (char === "\r") return "\\r";
+  if (char === "\t") return "\\t";
+  return char;
+}
+
+function formatBytes(chars) {
+  if (chars < 1024) return `${chars} B`;
+  if (chars < 1024 * 1024) return `${(chars / 1024).toFixed(1)} KB`;
+  return `${(chars / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/* ---- document browser ---------------------------------------------- */
+
+function segmentRole(seg) {
+  const table = QUALIFIERS[seg.id];
+  if (!table) return "";
+  for (const [position, codes] of Object.entries(table)) {
+    const value = seg.elements[position];
+    if (value && codes[value]) return codes[value];
+  }
+  return "";
+}
+
+// Builds the outline and toolbar once per load/run. Typing in the filter
+// only touches the row list, so a 1,200-row scope doesn't get rebuilt --
+// and the caret stays where the typist left it.
+function renderDocument() {
+  if (!state.doc) return;
+
+  $("paneDocument").innerHTML = `<div class="doc-view">
+    ${renderOutline()}
+    <div>
+      <div class="doc-toolbar">
+        <input type="text" id="docFilter" placeholder="Filter by segment ID or value" spellcheck="false" value="${escapeHtml(state.filter)}" aria-label="Filter segments" />
+        <span class="label doc-count" id="docCount"></span>
+      </div>
+      <div id="docRows"></div>
+    </div>
+  </div>`;
+
+  const filterBox = $("docFilter");
+  filterBox.addEventListener("input", () => {
+    state.filter = filterBox.value;
+    renderRows();
+  });
+
+  for (const btn of $("paneDocument").querySelectorAll(".onode")) {
+    btn.addEventListener("click", () => {
+      const at = btn.dataset.node;
+      state.scope = at === "all" ? null : {
+        start: state.outline[+at].start,
+        end: state.outline[+at].end,
+      };
+      for (const other of $("paneDocument").querySelectorAll(".onode")) {
+        other.setAttribute("aria-pressed", String(other === btn));
+      }
+      renderRows();
+    });
+  }
+
+  renderRows();
+}
+
+function scopedIndices() {
+  const scope = state.scope || { start: 0, end: state.doc.segments.length };
+  const needle = state.filter.trim().toLowerCase();
+  const matches = [];
+  for (let i = scope.start; i < scope.end; i++) {
+    const seg = state.doc.segments[i];
+    if (needle && ![seg.id, ...seg.elements].join(" ").toLowerCase().includes(needle)) continue;
+    matches.push(i);
+  }
+  return { matches, needle, size: scope.end - scope.start };
+}
+
+function renderRows() {
+  const { matches, needle, size } = scopedIndices();
+  state.visible = matches;
+  state.needle = needle;
+  state.window = null; // force a repaint even if the range happens to match
+  $("docCount").textContent = `${matches.length.toLocaleString()} of ${size.toLocaleString()}`;
+
+  if (!matches.length) {
+    $("docRows").innerHTML = `<div class="note">Nothing in this scope matches <b>${escapeHtml(state.filter)}</b>.</div>`;
+    return;
+  }
+
+  $("docRows").innerHTML =
+    `<div class="rows-vp" id="docViewport" style="height:${matches.length * ROW_H}px">
+       <div class="rows-window" id="docWindow"></div>
+     </div>`;
+  paintWindow();
+}
+
+// Only the rows near the viewport exist in the DOM; the container is sized
+// to the full list so the scrollbar still tells the truth. This is what
+// pagination would otherwise be for -- scrolling stays continuous, Ctrl-F
+// caveats aside, and a 60,000-segment interchange costs the same as a small
+// one.
+// Pure: which slice of the list covers the fold, given how far the list's
+// top sits above it (negative once scrolled past). Kept separate from the
+// DOM so the arithmetic is testable.
+function windowRange(containerTop, viewportHeight, total) {
+  const first = Math.max(0, Math.floor(-containerTop / ROW_H) - OVERSCAN);
+  const fit = Math.ceil(viewportHeight / ROW_H) + OVERSCAN * 2;
+  return { first, last: Math.min(total, first + fit) };
+}
+
+function paintWindow() {
+  const viewport = $("docViewport");
+  if (!viewport || !state.visible.length) return;
+
+  // Measured against the screen, so this works whether the pane scrolls
+  // (desktop, two-column) or the whole page does (narrow, stacked).
+  const rect = viewport.getBoundingClientRect();
+  const { first, last } = windowRange(rect.top, window.innerHeight, state.visible.length);
+
+  if (state.window && state.window.first === first && state.window.last === last) return;
+  state.window = { first, last };
+
+  const win = $("docWindow");
+  win.style.transform = `translateY(${first * ROW_H}px)`;
+  win.innerHTML = state.visible
+    .slice(first, last)
+    .map((i, n) => renderRow(i, state.needle, (first + n) % 2 === 1))
+    .join("");
+}
+
+let paintQueued = false;
+function queuePaint() {
+  if (paintQueued) return;
+  paintQueued = true;
+  requestAnimationFrame(() => { paintQueued = false; paintWindow(); });
+}
+// The pane is the scroll container on wide layouts, the window on narrow ones.
+document.querySelector(".panes").addEventListener("scroll", queuePaint, { passive: true });
+window.addEventListener("scroll", queuePaint, { passive: true });
+window.addEventListener("resize", queuePaint);
+
+function renderOutline() {
+  const items = [
+    `<button class="onode depth-0" type="button" data-node="all" aria-pressed="${!state.scope}">
+       <span class="tick">ALL</span><span class="oname">Whole file</span>
+     </button>`,
+  ];
+
+  state.outline.forEach((node, i) => {
+    const selected = !!state.scope && state.scope.start === node.start && state.scope.end === node.end;
+    let changed = false;
+    for (const idx of state.touched.keys()) {
+      if (idx >= node.start && idx < node.end) { changed = true; break; }
+    }
+    items.push(`<button class="onode depth-${node.depth}" type="button" data-node="${i}" aria-pressed="${selected}" title="${escapeHtml(node.detail || node.label)}">
+      <span class="tick">${node.start + 1}</span>
+      <span class="oname">${escapeHtml(node.label)}</span>
+      ${changed ? '<span class="flag" title="contains changes"></span>' : ""}
+    </button>`);
+  });
+
+  return `<nav class="outline" aria-label="Document outline">
+    <span class="label outline-title">Outline</span>
+    ${items.join("")}
+  </nav>`;
+}
+
+function renderRow(index, needle, alt) {
+  const seg = state.doc.segments[index];
+  const kind = state.touched.get(index);
+  const name = SEGMENT_NAMES[seg.id] || "";
+  const role = segmentRole(seg);
+  const envelope = ENVELOPE_IDS.has(seg.id);
+
+  const sep = escapeHtml(state.doc.elementSep);
+  const elements = seg.elements
+    .map((value) => highlight(value, needle))
+    .join(`<span class="sepc">${sep}</span>`);
+
+  // The role (Subscriber, Service date) is more use than the generic name
+  // when there is one; the full pair goes in the tooltip either way.
+  const label = role || name;
+  const title = name && role ? `${name} \u2014 ${role}` : (name || role);
+
+  return `<button type="button" class="row${alt ? " alt" : ""}${kind ? " touched-" + kind : ""}${envelope ? " envelope" : ""}" data-seg="${index}" title="${escapeHtml(title)}">
+    <span class="row-n">${index + 1}</span>
+    <span class="row-id">${escapeHtml(seg.id)}</span>
+    <span class="row-role">${escapeHtml(label)}</span>
+    <span class="row-el">${elements || '<span class="sepc">no elements</span>'}</span>
+  </button>`;
+}
+
+/* ---- element inspector --------------------------------------------- */
+
+// Delegated from the pane, which outlives every repaint of the row window.
+$("paneDocument").addEventListener("click", (e) => {
+  const row = e.target.closest(".row");
+  if (row) inspectSegment(+row.dataset.seg);
+});
+
+// X12 numbers elements from 1 within the segment: NM1-01, NM1-02, ...
+function inspectSegment(index) {
+  const seg = state.doc.segments[index];
+  const codes = QUALIFIERS[seg.id] || {};
+  const kind = state.touched.get(index);
+
+  const rows = seg.elements.map((value, i) => {
+    const position = `${seg.id}-${String(i + 1).padStart(2, "0")}`;
+    const meaning = codes[i] && codes[i][value] ? codes[i][value] : "";
+    const components = value.includes(state.doc.componentSep)
+      ? value.split(state.doc.componentSep)
+      : null;
+
+    return `<tr>
+      <td class="pos">${escapeHtml(position)}</td>
+      <td class="val">${value === "" ? '<span class="empty">empty</span>' : escapeHtml(value)}${
+        components
+          ? `<span class="comp">${components.map((c, n) =>
+              `${n + 1}. ${escapeHtml(c)}`).join(" &middot; ")}</span>`
+          : ""
+      }</td>
+      <td class="mean">${escapeHtml(meaning)}</td>
+    </tr>`;
+  }).join("");
+
+  $("inspectTitle").innerHTML =
+    `<b>${escapeHtml(seg.id)}</b>${kind ? ` <span class="chip ${kind}">${kind === "shift" ? "date shift" : "replaced"}</span>` : ""}`;
+  const dot = " \u00b7 ";
+  $("inspectSub").textContent =
+    `Segment ${index + 1} of ${state.doc.segments.length}` +
+    (SEGMENT_NAMES[seg.id] ? dot + SEGMENT_NAMES[seg.id] : "") +
+    dot + `${seg.elements.length} element${seg.elements.length === 1 ? "" : "s"}`;
+
+  $("inspectBody").innerHTML = seg.elements.length
+    ? `<table class="etable">
+         <thead><tr><th>Position</th><th>Value</th><th>Meaning</th></tr></thead>
+         <tbody>${rows}</tbody>
+       </table>`
+    : `<div class="note" style="margin-top:14px;">This segment carries no elements.</div>`;
+
+  $("inspectDialog").showModal();
+}
+
+function highlight(value, needle) {
+  const text = escapeHtml(value);
+  if (!needle) return text;
+  const at = value.toLowerCase().indexOf(needle);
+  if (at === -1) return text;
+  return escapeHtml(value.slice(0, at)) +
+    "<mark>" + escapeHtml(value.slice(at, at + needle.length)) + "</mark>" +
+    escapeHtml(value.slice(at + needle.length));
+}
+
+/* ---- rule cards ---------------------------------------------------- */
+function syncCards() {
+  $("shiftCard").classList.toggle("off", !$("shiftOn").checked);
+  $("swapCard").classList.toggle("off", !$("swapOn").checked);
+  const active = ($("shiftOn").checked ? 1 : 0) + ($("swapOn").checked ? 1 : 0);
+  $("ruleCount").textContent = `${active} of 2 on`;
+  syncRunButton();
+}
+
+function syncRunButton() {
+  const anyRule = $("shiftOn").checked || $("swapOn").checked;
+  $("runBtn").disabled = !state.doc || !anyRule;
+}
+
+["shiftOn", "swapOn"].forEach((id) => $(id).addEventListener("change", syncCards));
+syncCards();
+
+// Enter anywhere in the rail runs the rules.
+document.querySelector(".rail").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.tagName === "INPUT" && e.target.type !== "file") {
+    e.preventDefault();
+    if (!$("runBtn").disabled) run();
+  }
+});
+
+function buildRules() {
+  const rules = [];
+  if ($("shiftOn").checked) {
+    const days = parseInt($("shiftDays").value, 10);
+    rules.push(new Dtp472ServiceLineShiftRule(Number.isFinite(days) ? days : 0));
+  }
+  if ($("swapOn").checked) {
+    rules.push(new StringReplaceRule({
+      find: $("findText").value,
+      replace: $("replaceText").value,
+      caseSensitive: $("caseOn").checked,
+      wholeElement: $("wholeOn").checked,
+      segmentIds: $("scopeText").value.split(/[\s,]+/).filter(Boolean),
+    }));
+  }
+  return rules;
+}
+
+/* ---- run ----------------------------------------------------------- */
+$("runBtn").addEventListener("click", run);
+
+// The banner lives at the top of the rail, which may be scrolled out of
+// view by the time someone presses Run, so pull it back into sight.
+function showError(title, detail) {
+  const slot = $("parseError");
+  slot.innerHTML = errorBanner(title, detail);
+  slot.hidden = false;
+  slot.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function run() {
+  if (!state.raw) return;
+
+  const rules = buildRules();
+  if (rules.some((r) => r instanceof StringReplaceRule && !r.find)) {
+    showError("Nothing to find. ", "Enter the text you want replaced, or switch the rule off.");
+    $("findText").focus();
+    return;
+  }
+
+  let result;
+  try {
+    result = processText(state.raw, rules);
+  } catch (err) {
+    showError("Rules didn't run. ", err.message);
+    return;
+  }
+
+  $("parseError").hidden = true;
+  $("parseError").innerHTML = "";
+  state.result = result;
+  state.outputName = buildOutputName(state.fileName);
+  render(result);
+}
+
+function render(result) {
+  $("stageLabel").textContent = "Result";
+  $("stageName").textContent = state.outputName;
+  $("tiles").hidden = false;
+  $("tabChanges").hidden = false;
+  $("tabOutput").hidden = false;
+  $("copyBtn").hidden = false;
+  $("downloadBtn").hidden = false;
+
+  // The document view reads from the edited segments, so browsing after a
+  // run shows the new values with their rule's colour on the gutter.
+  state.touched = new Map();
+  for (const change of result.changes) {
+    state.touched.set(change.index, change.kinds[0] || "swap");
+  }
+
+  const tiles = [
+    { label: "Segments in file", value: result.segmentCount, cls: "" },
+    { label: "Segments changed", value: result.changes.length, cls: "is-total" },
+  ];
+  for (const s of result.summary) {
+    tiles.push({
+      label: s.kind === "shift" ? "Dates shifted" : "Values replaced",
+      value: s.occurrences,
+      cls: s.kind === "shift" ? "is-shift" : "is-swap",
+    });
+  }
+
+  $("tiles").innerHTML = tiles.map((t) =>
+    `<div class="tile ${t.cls}"><b>${t.value.toLocaleString()}</b><span class="label">${t.label}</span></div>`
+  ).join("");
+
+  state.doc = parse(result.output); // browse the edited document, not the original
+  state.outline = buildOutline(state.doc.segments);
+  renderDocument();
+  renderChanges(result);
+  renderOutput(result);
+  selectTab(result.changes.length ? "changes" : "document");
+
+  if (result.changes.length === 0) {
+    toast("No segments matched \u2014 output is identical to the input");
+  } else {
+    toast(`${result.changes.length} segment${result.changes.length === 1 ? "" : "s"} changed`);
+  }
+}
+
+function renderChanges(result) {
+  const pane = $("paneChanges");
+  if (!result.changes.length) {
+    pane.innerHTML = `<div class="note">No segment matched these rules, so the output is a byte-for-byte copy of the input. Check the search text, the segment scope, and whether the dates you expected sit inside an <code>LX</code> service line.</div>`;
+    return;
+  }
+
+  const shown = result.changes.slice(0, MAX_RENDERED_CHANGES);
+  const rows = shown.map((change) => {
+    const chips = change.kinds.map((kind) =>
+      `<span class="chip ${kind}">${kind === "shift" ? "date shift" : "replaced"}</span>`
+    ).join("");
+
+    const changedIdx = new Set();
+    const maxLen = Math.max(change.before.elements.length, change.after.elements.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (change.before.elements[i] !== change.after.elements[i]) changedIdx.add(i);
+    }
+
+    return `<div class="seg">
+      <div class="seg-idx"><b>#${change.index + 1}</b><span>${escapeHtml(change.after.id)}</span></div>
+      <div class="seg-body">
+        <div class="seg-rules">${chips}</div>
+        ${renderLine(change.before, changedIdx, "before", change.elementKinds)}
+        ${renderLine(change.after, changedIdx, "after", change.elementKinds)}
+      </div>
+    </div>`;
+  }).join("");
+
+  const more = result.changes.length > shown.length
+    ? `<div class="note">Showing the first ${MAX_RENDERED_CHANGES.toLocaleString()} of ${result.changes.length.toLocaleString()} changed segments. The downloaded file contains all of them.</div>`
+    : "";
+
+  pane.innerHTML = `<div class="seg-list">${rows}</div>${more}`;
+}
+
+function renderLine(segment, changedIdx, variant, elementKinds) {
+  const sep = escapeHtml(state.result.delimiters.element);
+  const cells = [`<span class="el id">${escapeHtml(segment.id)}</span>`];
+  segment.elements.forEach((value, i) => {
+    const kind = elementKinds.get(i);
+    const hit = changedIdx.has(i) ? ` hit${kind && variant === "after" ? " " + kind : ""}` : "";
+    cells.push(`<span class="sepc">${sep}</span><span class="el${hit}">${escapeHtml(value)}</span>`);
+  });
+  const mark = variant === "before" ? "&minus;" : "+";
+  return `<div class="line ${variant}"><span class="line-mark">${mark}</span>${cells.join("")}</div>`;
+}
+
+function renderOutput(result) {
+  const pane = $("paneOutput");
+  const truncated = result.output.length > MAX_RENDERED_OUTPUT;
+  const text = truncated ? result.output.slice(0, MAX_RENDERED_OUTPUT) : result.output;
+  pane.innerHTML =
+    (truncated ? `<div class="note" style="margin-bottom:10px;">Preview truncated at ${MAX_RENDERED_OUTPUT.toLocaleString()} characters. The download is complete.</div>` : "") +
+    `<pre class="raw">${escapeHtml(text)}</pre>`;
+}
+
+/* ---- tabs ---------------------------------------------------------- */
+const TABS = ["document", "changes", "output"];
+
+function selectTab(which) {
+  for (const name of TABS) {
+    const key = name[0].toUpperCase() + name.slice(1);
+    $("tab" + key).setAttribute("aria-selected", String(name === which));
+    $("pane" + key).hidden = name !== which;
+  }
+  // A hidden pane measures as zero, so any window computed while the
+  // Document tab was away is meaningless. Discard it and paint fresh.
+  if (which === "document") {
+    state.window = null;
+    paintWindow();
+  }
+}
+for (const name of TABS) {
+  $("tab" + name[0].toUpperCase() + name.slice(1)).addEventListener("click", () => selectTab(name));
+}
+
+/* ---- guide --------------------------------------------------------- */
+const guide = $("guideDialog");
+const openGuide = () => guide.showModal();
+$("guideBtn").addEventListener("click", openGuide);
+$("blankGuideBtn").addEventListener("click", openGuide);
+$("guideClose").addEventListener("click", () => guide.close());
+
+const inspector = $("inspectDialog");
+$("inspectClose").addEventListener("click", () => inspector.close());
+
+// Clicking the backdrop closes it; clicks inside the panel must not.
+for (const dlg of [guide, inspector]) {
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+}
+
+/* ---- output -------------------------------------------------------- */
+$("downloadBtn").addEventListener("click", () => {
+  if (!state.result) return;
+  const blob = new Blob([state.result.output], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = state.outputName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`Saved ${state.outputName}`);
+});
+
+$("copyBtn").addEventListener("click", async () => {
+  if (!state.result) return;
+  try {
+    await navigator.clipboard.writeText(state.result.output);
+    toast("Output copied");
+  } catch {
+    toast("Clipboard blocked \u2014 use Download instead");
+  }
+});
+</script>
