@@ -1,0 +1,11 @@
+# EDI files: line endings are DATA, not formatting.
+#
+# A segment's leading whitespace round-trips through parse()/serialize()
+# byte for byte, and the parity suite asserts it. Letting git rewrite CRLF
+# to LF on checkout would silently change fixture content and break that
+# guarantee, so these are excluded from all EOL normalization.
+*.edi -text
+*.txt -text
+
+# Everything else normalizes to LF in the repo, checked out per-platform.
+* text=auto
