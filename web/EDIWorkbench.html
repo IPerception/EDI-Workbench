@@ -176,6 +176,12 @@
   }
   .theme-btn:hover { border-color: var(--signal); color: var(--signal); }
   .theme-btn svg { width: 15px; height: 15px; }
+  /* Masking is a mode, not an action, so the control stays lit while it is on. */
+  .theme-btn.on {
+    background: var(--signal-wash);
+    border-color: var(--signal);
+    color: var(--signal-2);
+  }
 
   /* ---- rail sections ------------------------------------------------ */
   .block { display: flex; flex-direction: column; gap: 10px; }
@@ -659,6 +665,42 @@
      visible in the raw value as well as in the breakdown. */
   .csep { color: var(--signal); opacity: .65; }
 
+  /* ---- claim table --------------------------------------------------- */
+  .claims-toolbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .claims-toolbar .grow { flex: 1; }
+  .claims-scroll { overflow: auto; max-height: calc(100vh - 220px); }
+  .ctable { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+  .ctable th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--panel);
+    padding: 8px 12px 6px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--slate); text-align: left; font-weight: 400;
+    white-space: nowrap;
+  }
+  .ctable td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .ctable tbody tr:hover td { background: var(--panel-2); }
+  /* First line of a claim gets a heavier rule, so claims read as blocks
+     rather than as one undifferentiated run of service lines. */
+  .ctable tr.cband td { border-top: 1px solid var(--line); }
+  .ctable tr.cband:first-child td { border-top: 0; }
+  .ctable .cnum { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  .ctable .cmono { font-family: var(--mono); }
+  .ctable .cdim { color: var(--slate); }
+  .masked { font-family: var(--mono); color: var(--slate); letter-spacing: .05em; }
+  .claims-empty { padding: 32px 24px; color: var(--slate); }
+
   /* ---- stage: results ----------------------------------------------- */
   .stage-head {
     display: flex; align-items: center; gap: 16px;
@@ -853,6 +895,13 @@
         <h1 class="wordmark">EDI<span class="sep">*</span>WORKBENCH</h1>
         <p class="tagline">X12 837 segment editor &middot; runs entirely in this tab</p>
       </div>
+      <button class="theme-btn" id="maskBtn" type="button" title="Hide names, addresses, dates of birth and member IDs on screen" aria-label="Mask protected health information" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
+          <circle cx="12" cy="12" r="2.5" />
+          <path d="m4 20 16-16" />
+        </svg>
+      </button>
       <button class="theme-btn" id="themeBtn" type="button" title="Switch theme" aria-label="Switch theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z" />
@@ -1006,12 +1055,14 @@
 
       <div class="tabs" role="tablist">
         <button class="tab" id="tabDocument" role="tab" aria-selected="true" type="button">Document</button>
+        <button class="tab" id="tabClaims"   role="tab" aria-selected="false" type="button">Claims</button>
         <button class="tab" id="tabChanges"  role="tab" aria-selected="false" type="button" hidden>Changes</button>
         <button class="tab" id="tabOutput"   role="tab" aria-selected="false" type="button" hidden>Output</button>
       </div>
 
       <div class="panes">
         <div id="paneDocument"></div>
+        <div id="paneClaims" hidden></div>
         <div id="paneChanges" hidden></div>
         <div id="paneOutput" hidden></div>
       </div>
@@ -1048,7 +1099,14 @@
         <dd>Moves every <code>DTP*472</code> date that sits inside a service line (loop 2400) &mdash; the ones opened by <code>LX</code> and closed by <code>CLM</code>, <code>HL</code>, or <code>SE</code>. Claim-level dates are left alone. Negative values shift backwards. Impossible dates are skipped rather than failing the file.</dd>
         <dt>Find &amp; replace</dt>
         <dd>Rewrites element values only. Segment IDs are never touched, and neither is the fixed-width <code>ISA</code> header &mdash; changing a value's length there breaks the interchange for the receiver. Scope it to specific segments to keep a common string from being rewritten everywhere.</dd>
+        <dd><b>Anywhere</b> matches a substring of any element. <b>Whole element</b> matches only when the entire element is the search text. <b>Whole component</b> splits composites first, so in <code>SV1*HC:99213:25</code> it can match <code>99213</code> on its own &mdash; whole element cannot, because there the element is <code>HC:99213:25</code>.</dd>
       </dl>
+    </section>
+
+    <section>
+      <h3>Reading a production file</h3>
+      <p>The <b>Claims</b> tab flattens the interchange into one row per service line &mdash; patient, date, procedure, modifiers, units, charge, diagnoses, payer &mdash; which is closer to how a claim is actually read than a list of segments is. <b>Export CSV</b> writes every row, not just the ones on screen.</p>
+      <p>The eye button in the header hides names, addresses, dates of birth, member IDs and social security numbers wherever they appear, so a real file can be browsed or screen-shared without putting identifiers in front of the room. It is a display setting only: the file you download always carries the real values, and a CSV exported while masking is on is named <code>_masked</code> to record which one you have.</p>
     </section>
 
     <section>
@@ -1640,6 +1698,8 @@ const state = {
   visible: [],        // segment indices passing the current scope + filter
   needle: "",         // lower-cased filter text, for match highlighting
   window: null,       // {first, last} slice of `visible` currently in the DOM
+  claims: null,       // service-line index, built lazily when Claims is opened
+  mask: false,        // hide PHI on screen; never affects the output file
 };
 
 /* ---- outline ------------------------------------------------------- */
@@ -1688,6 +1748,24 @@ $("themeBtn").addEventListener("click", () => {
   const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
   const current = document.documentElement.dataset.theme || (prefersDark ? "dark" : "light");
   document.documentElement.dataset.theme = current === "dark" ? "light" : "dark";
+});
+
+/* ---- PHI mask ------------------------------------------------------- */
+
+// On-screen only. The output file, the change list, and the download always
+// carry the real values; this exists so a production file can be read, and
+// screen-shared, without putting identifiers in front of the room.
+$("maskBtn").addEventListener("click", () => {
+  state.mask = !state.mask;
+  $("maskBtn").setAttribute("aria-pressed", String(state.mask));
+  $("maskBtn").classList.toggle("on", state.mask);
+
+  if (state.doc) {
+    state.window = null;   // force a repaint of the row window
+    paintWindow();
+    if (!$("paneClaims").hidden) renderClaims();
+  }
+  toast(state.mask ? "PHI hidden on screen" : "PHI visible");
 });
 
 /* ---- toast --------------------------------------------------------- */
@@ -1778,6 +1856,7 @@ function loadFile(name, raw) {
   errorSlot.innerHTML = "";
 
   state.outline = buildOutline(state.doc.segments);
+  state.claims = null; // stale the moment the document changes; rebuilt on demand
   $("blank").hidden = true;
   $("workspace").hidden = false;
   $("stageLabel").textContent = "Loaded";
@@ -2000,7 +2079,9 @@ function renderRow(index, needle, alt) {
 
   const sep = escapeHtml(state.doc.elementSep);
   const elements = seg.elements
-    .map((value) => componentHtml(value, needle))
+    .map((value, i) => (state.mask && value && isPhiField(seg, i)
+      ? `<span class="masked">${escapeHtml(maskText(value))}</span>`
+      : componentHtml(value, needle)))
     .join(`<span class="sepc">${sep}</span>`);
 
   // The role (Subscriber, Service date) is more use than the generic name
@@ -2036,13 +2117,22 @@ function inspectSegment(index) {
     const components = splitComponents(value, state.doc.componentSep);
     const spec = components ? compositeSpec(seg.id, i) : null;
 
+    const hidden = state.mask && value && isPhiField(seg, i);
+    const shown = value === ""
+      ? '<span class="empty">empty</span>'
+      : hidden
+        ? `<span class="masked">${escapeHtml(maskText(value))}</span>`
+        : componentHtml(value);
+
     const head = `<tr>
       <td class="pos">${escapeHtml(position)}</td>
-      <td class="val">${value === "" ? '<span class="empty">empty</span>' : componentHtml(value)}</td>
+      <td class="val">${shown}</td>
       <td class="mean">${escapeHtml(spec ? spec.label : meaning)}</td>
     </tr>`;
 
-    if (!components) return head;
+    // Masked values get no breakdown: splitting one into components would
+    // hand back exactly what the mask is hiding.
+    if (!components || hidden) return head;
 
     // X12 numbers sub-elements from 1 as well: SV1-01-2 is the procedure
     // code inside the composite at SV1-01.
@@ -2102,6 +2192,261 @@ function componentHtml(value, needle) {
   return parts
     .map((part) => highlight(part, needle))
     .join(`<span class="csep">${escapeHtml(sep)}</span>`);
+}
+
+/* ---- claim table ---------------------------------------------------- */
+
+// Fields that carry protected health information, by segment and element
+// index. Used only for on-screen masking -- output is never affected.
+//
+// NM1 is conditional: NM1-02 says whether the entity is a person ("1") or
+// an organisation ("2"), and a payer or facility name is not PHI. Masking
+// it anyway would make the table unreadable for no privacy gain.
+const PHI_FIELDS = {
+  NM1: [2, 3, 4, 8],   // last/first/middle name, identifier
+  N3: [0, 1],          // street address
+  N4: [0, 2],          // city, postal code
+  DMG: [1],            // date of birth
+  PER: [3, 5, 7],      // phone / email contact values
+  REF: [1],            // reference value, but only for the SSN qualifier
+};
+
+function isPhiField(seg, index) {
+  const fields = PHI_FIELDS[seg.id];
+  if (!fields || !fields.includes(index)) return false;
+  // An organisation's name is not PHI, and masking payer and facility names
+  // would make the document unreadable for no privacy gain. NM1-02 says
+  // which it is: "1" is a person, "2" an organisation.
+  if (seg.id === "NM1" && seg.elements[1] !== "1") return false;
+  // REF carries everything from claim numbers to licence numbers; only the
+  // social security qualifier is an identifier worth hiding.
+  if (seg.id === "REF") return seg.elements[0] === "SY";
+  return true;
+}
+
+// Replaces characters while preserving the value's shape, so a masked table
+// still reads as a table: you can see that a field is populated, and how
+// long it is, without being able to read it.
+function maskText(value) {
+  return String(value).replace(/[A-Za-z0-9]/g, "#");
+}
+
+// One row per service line, holding segment indices rather than copied
+// values. A 30,000-claim file then costs an index of small integers instead
+// of a second copy of the document -- the same reasoning that keeps the
+// document list virtualized.
+function buildClaimIndex(segments) {
+  const rows = [];
+  const ctx = { billing: -1, subscriber: -1, patient: -1, payer: -1, rendering: -1 };
+  let clm = -1, claimNo = 0, hi = [], lines = 0;
+  let lx = -1, sv = -1, dtp = -1;
+
+  const emitLine = () => {
+    if (clm === -1 || lx === -1) return;
+    rows.push({ claimNo, clm, hi, lx, sv, dtp, ...ctx });
+    lines++;
+    lx = -1; sv = -1; dtp = -1;
+  };
+
+  const closeClaim = () => {
+    emitLine();
+    // A claim with no service lines is still a claim; give it a row rather
+    // than letting it disappear from the table.
+    if (clm !== -1 && lines === 0) {
+      rows.push({ claimNo, clm, hi, lx: -1, sv: -1, dtp: -1, ...ctx });
+    }
+    clm = -1; hi = []; lines = 0;
+  };
+
+  segments.forEach((seg, i) => {
+    switch (seg.id) {
+      case "NM1": {
+        const q = seg.elements[0];
+        if (q === "85") ctx.billing = i;
+        else if (q === "IL") ctx.subscriber = i;
+        else if (q === "QC") ctx.patient = i;
+        else if (q === "PR") ctx.payer = i;
+        else if (q === "82") ctx.rendering = i;
+        break;
+      }
+      case "CLM":
+        closeClaim();
+        clm = i; claimNo++;
+        break;
+      case "HI":
+        if (clm !== -1) hi.push(i);
+        break;
+      case "LX":
+        emitLine();
+        lx = i;
+        break;
+      case "SV1": case "SV2": case "SV5":
+        if (lx !== -1) sv = i;
+        break;
+      case "DTP":
+        if (lx !== -1 && seg.elements[0] === "472") dtp = i;
+        break;
+      case "SE":
+        closeClaim();
+        // A new transaction starts a fresh hierarchy: nothing above carries.
+        ctx.billing = ctx.subscriber = ctx.patient = ctx.payer = ctx.rendering = -1;
+        break;
+    }
+  });
+  closeClaim();
+
+  // The patient is the subscriber unless a separate patient loop exists,
+  // which is the usual case for a self-insured subscriber.
+  for (const r of rows) if (r.patient === -1) r.patient = r.subscriber;
+  return rows;
+}
+
+/* Value accessors. All read through to the live document, so nothing here
+   holds a second copy of anything. */
+function elAt(index, n) {
+  if (index === -1) return "";
+  const seg = state.doc.segments[index];
+  return (seg && seg.elements[n]) || "";
+}
+
+function nameAt(index) {
+  if (index === -1) return "";
+  const e = state.doc.segments[index].elements;
+  if (e[1] === "2") return e[2] || "";              // organisation: one name field
+  return [e[2], e[3]].filter(Boolean).join(", ");   // person: last, first
+}
+
+function date8(value) {
+  return /^\d{8}$/.test(value)
+    ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
+    : value;
+}
+
+// SV101 is a composite: qualifier, code, then up to four modifiers.
+function procParts(index) {
+  const raw = elAt(index, 0);
+  if (!raw) return { code: "", mods: "" };
+  const parts = splitComponents(raw, state.doc.componentSep) || [raw];
+  return { code: parts[1] || parts[0] || "", mods: parts.slice(2, 6).filter(Boolean).join(" ") };
+}
+
+function diagnosesAt(row) {
+  const codes = [];
+  for (const idx of row.hi) {
+    for (const value of state.doc.segments[idx].elements) {
+      const parts = splitComponents(value, state.doc.componentSep);
+      if (parts && parts[1]) codes.push(parts[1]);
+      else if (value) codes.push(value);
+    }
+  }
+  return codes.join(" ");
+}
+
+function posAt(row) {
+  const raw = elAt(row.clm, 4);
+  const parts = splitComponents(raw, state.doc.componentSep) || [raw];
+  const code = parts[0] || "";
+  const spec = compositeSpec("CLM", 4);
+  const name = spec && spec.codes[0][code];
+  return name ? `${code} ${name}` : code;
+}
+
+// One column spec drives both the table and the CSV export, so the two can
+// never drift apart.
+const CLAIM_COLUMNS = [
+  { label: "Claim",       get: (r) => elAt(r.clm, 0), cls: "cmono", phi: true },
+  { label: "Patient",     get: (r) => nameAt(r.patient), phi: true },
+  { label: "Line",        get: (r) => elAt(r.lx, 0), cls: "cnum" },
+  { label: "Service date",get: (r) => date8(elAt(r.dtp, 2)), cls: "cmono" },
+  { label: "Procedure",   get: (r) => procParts(r.sv).code, cls: "cmono" },
+  { label: "Modifiers",   get: (r) => procParts(r.sv).mods, cls: "cmono" },
+  { label: "Units",       get: (r) => elAt(r.sv, 3), cls: "cnum" },
+  { label: "Charge",      get: (r) => elAt(r.sv, 1), cls: "cnum" },
+  { label: "Diagnoses",   get: (r) => diagnosesAt(r), cls: "cmono" },
+  { label: "Place of service", get: (r) => posAt(r), cls: "cdim" },
+  { label: "Billing provider", get: (r) => nameAt(r.billing) },
+  { label: "Payer",       get: (r) => nameAt(r.payer) },
+  { label: "Claim total", get: (r) => elAt(r.clm, 1), cls: "cnum" },
+];
+
+// Rendering is capped for the same reason the changes list is: a 30,000-row
+// table is slower to paint than it is useful to read. Export is complete.
+const MAX_RENDERED_CLAIM_ROWS = 1000;
+
+function renderClaims() {
+  if (!state.doc) return;
+  if (!state.claims) state.claims = buildClaimIndex(state.doc.segments);
+
+  const rows = state.claims;
+  if (!rows.length) {
+    $("paneClaims").innerHTML =
+      `<p class="claims-empty">No CLM segments in this file, so there are no claims to tabulate.
+       The Document tab shows every segment.</p>`;
+    return;
+  }
+
+  const shown = rows.slice(0, MAX_RENDERED_CLAIM_ROWS);
+  const claimCount = rows.length ? rows[rows.length - 1].claimNo : 0;
+
+  const head = CLAIM_COLUMNS.map((c) => `<th>${escapeHtml(c.label)}</th>`).join("");
+  const body = shown.map((r, i) => {
+    const first = i === 0 || shown[i - 1].claimNo !== r.claimNo;
+    const cells = CLAIM_COLUMNS.map((c) => {
+      const value = c.get(r);
+      const masked = state.mask && c.phi && value;
+      return `<td class="${c.cls || ""}${masked ? " masked" : ""}">${escapeHtml(masked ? maskText(value) : value)}</td>`;
+    }).join("");
+    return `<tr class="${first ? "cband" : ""}">${cells}</tr>`;
+  }).join("");
+
+  const truncated = rows.length > shown.length
+    ? `<span class="label">showing ${shown.length.toLocaleString()} of ${rows.length.toLocaleString()} &mdash; export for all</span>`
+    : "";
+
+  $("paneClaims").innerHTML = `
+    <div class="claims-toolbar">
+      <span class="label"><b>${claimCount.toLocaleString()}</b> claims &middot; <b>${rows.length.toLocaleString()}</b> service lines</span>
+      ${truncated}
+      <span class="grow"></span>
+      <button class="btn" id="csvBtn" type="button">Export CSV</button>
+    </div>
+    <div class="claims-scroll">
+      <table class="ctable">
+        <thead><tr>${head}</tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+
+  $("csvBtn").addEventListener("click", exportClaimsCsv);
+}
+
+// RFC 4180 quoting: wrap anything containing a quote, comma, or newline and
+// double the quotes inside. A leading =, +, -, or @ is prefixed with a
+// quote as well, so a spreadsheet treats the cell as text rather than as a
+// formula -- claim data is not trusted input.
+function csvCell(value) {
+  const text = String(value == null ? "" : value);
+  const safe = /^[=+\-@]/.test(text) ? "'" + text : text;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+function exportClaimsCsv() {
+  const rows = state.claims || [];
+  const lines = [CLAIM_COLUMNS.map((c) => csvCell(c.label)).join(",")];
+  for (const r of rows) {
+    lines.push(CLAIM_COLUMNS.map((c) => {
+      const value = c.get(r);
+      return csvCell(state.mask && c.phi && value ? maskText(value) : value);
+    }).join(","));
+  }
+
+  // A BOM so Excel reads the file as UTF-8 rather than the local codepage.
+  const bom = String.fromCharCode(0xFEFF);
+  const blob = new Blob([bom + lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  const stem = (state.fileName || "claims").replace(/\.[^.]+$/, "");
+  // The suffix records whether the export carries real identifiers.
+  saveBlob(blob, `${stem}_claims${state.mask ? "_masked" : ""}.csv`);
+  toast(`${rows.length.toLocaleString()} service lines exported${state.mask ? ", PHI masked" : ""}`);
 }
 
 /* ---- rule cards ---------------------------------------------------- */
@@ -2219,6 +2564,7 @@ function render(result) {
 
   state.doc = parse(result.output); // browse the edited document, not the original
   state.outline = buildOutline(state.doc.segments);
+  state.claims = null; // stale the moment the document changes; rebuilt on demand
   renderDocument();
   renderChanges(result);
   renderOutput(result);
@@ -2289,7 +2635,7 @@ function renderOutput(result) {
 }
 
 /* ---- tabs ---------------------------------------------------------- */
-const TABS = ["document", "changes", "output"];
+const TABS = ["document", "claims", "changes", "output"];
 
 function selectTab(which) {
   for (const name of TABS) {
@@ -2303,6 +2649,9 @@ function selectTab(which) {
     state.window = null;
     paintWindow();
   }
+  // Built on first open rather than at load: on a large file the index is
+  // real work, and most sessions never leave the Document tab.
+  if (which === "claims") renderClaims();
 }
 for (const name of TABS) {
   $("tab" + name[0].toUpperCase() + name.slice(1)).addEventListener("click", () => selectTab(name));
@@ -2324,17 +2673,24 @@ for (const dlg of [guide, inspector]) {
 }
 
 /* ---- output -------------------------------------------------------- */
-$("downloadBtn").addEventListener("click", () => {
-  if (!state.result) return;
-  const blob = new Blob([state.result.output], { type: "application/octet-stream" });
+
+// Hand a blob to the browser's downloader. The object URL is revoked on a
+// timer rather than immediately: revoking it in the same tick can cancel
+// the download before the browser has read it.
+function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = state.outputName;
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+$("downloadBtn").addEventListener("click", () => {
+  if (!state.result) return;
+  saveBlob(new Blob([state.result.output], { type: "application/octet-stream" }), state.outputName);
   toast(`Saved ${state.outputName}`);
 });
 
