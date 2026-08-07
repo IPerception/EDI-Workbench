@@ -55,7 +55,10 @@ for (const attr of html.matchAll(/class="([^"]*)"/g)) {
 }
 for (const c of script.matchAll(/classList\.(?:add|toggle|remove)\("([^"]+)"/g)) used.add(c[1]);
 // Classes built by string concatenation, which the scan above can't see.
-["touched-shift", "touched-swap", "depth-0", "depth-1", "depth-2"].forEach((c) => used.add(c));
+["touched-shift", "touched-swap", "depth-0", "depth-1", "depth-2",
+ "trow", "tgroup", "tseg", "tel", "tsub", "open-able", "alt", "sel",
+ "tguide", "on", "tcar", "open", "shut", "leaf", "last",
+ "lp-head", "lp-hier", "lp-claim", "lp-line"].forEach((c) => used.add(c));
 const orphans = [...used].filter((c) => !defined.has(c));
 if (orphans.length) bad("classes used but never styled: " + orphans.join(", "));
 else ok(`all ${used.size} classes used are defined in the stylesheet`);

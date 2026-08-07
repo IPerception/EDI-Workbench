@@ -11,6 +11,7 @@ import { TESTS_DIR } from "./paths.mjs";
 const SUITES = [
   ["parity", "engine matches the Python edi_engine byte for byte"],
   ["outline", "document outline + qualifier decoding"],
+  ["tree", "structure tree building and row flattening"],
   ["claims", "claim/service-line index, PHI masking, CSV export"],
   ["validate", "control counts, claim balance, and count repair"],
   ["virtual", "virtual list windowing arithmetic"],

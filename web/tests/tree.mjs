@@ -1,0 +1,407 @@
+// Tests the structure tree behind the Tree tab: how the interchange's
+// nesting is recovered from ISA/GS/ST/HL/CLM/LX, and how that tree is
+// flattened into the fixed-height rows the virtual list paints.
+//
+// The flattener is where the correctness that matters lives: every row it
+// emits must be exactly one ROW_H tall, so an expanded segment becomes one
+// row per element rather than a taller card.
+import { readFileSync } from "node:fs";
+
+import { APP, FIXTURE } from "./paths.mjs";
+
+const html = readFileSync(APP, "utf8");
+
+// Lift a top-level function or brace-delimited const by brace matching.
+function lift(name, opener) {
+  const at = html.indexOf(opener);
+  if (at === -1) throw new Error("not found: " + name);
+  let depth = 0, i = html.indexOf("{", at);
+  for (; i < html.length; i++) {
+    if (html[i] === "{") depth++;
+    else if (html[i] === "}") { depth--; if (depth === 0) return html.slice(at, i + 1); }
+  }
+  throw new Error("unbalanced: " + name);
+}
+
+// Scalar consts have no braces to match on, so take the declaration up to
+// its semicolon -- these carry trailing comments, so the line doesn't end there.
+function liftLine(name) {
+  const m = html.match(new RegExp("^const " + name + " = [^\\n]*?;", "m"));
+  if (!m) throw new Error("not found: " + name);
+  return m[0];
+}
+
+const src = [
+  lift("SEGMENT_NAMES", "const SEGMENT_NAMES = {") + ";",
+  lift("QUALIFIERS", "const QUALIFIERS = {") + ";",
+  lift("COMPOSITES", "const COMPOSITES = {") + ";",
+  lift("PHI_FIELDS", "const PHI_FIELDS = {") + ";",
+  lift("GROUP_RANK", "const GROUP_RANK = {") + ";",
+  lift("TRAILER_RANK", "const TRAILER_RANK = {") + ";",
+  liftLine("HL_RANK"),
+  liftLine("HL_RANK_MAX"),
+  liftLine("ENTITY_RANK"),
+  liftLine("ROW_H"),
+  lift("HL_LOOPS", "const HL_LOOPS = {") + ";",
+  lift("ENTITY_LOOPS", "const ENTITY_LOOPS = {") + ";",
+  lift("ANCHOR_LOOPS", "const ANCHOR_LOOPS = {") + ";",
+  lift("enclosingLoop", "function enclosingLoop(stack)"),
+  lift("compositeSpec", "function compositeSpec(segId, index)"),
+  lift("segmentRole", "function segmentRole(seg)"),
+  lift("isPhiField", "function isPhiField(seg, index)"),
+  lift("splitN", "function splitN(text, sep, maxsplit)"),
+  lift("detectDelimiters", "function detectDelimiters(raw)"),
+  lift("splitComponents", "function splitComponents(value, componentSep)"),
+  lift("parse", "function parse(raw)"),
+  lift("buildTree", "function buildTree(segments)"),
+  lift("defaultExpanded", "function defaultExpanded(root)"),
+  lift("allGroupKeys", "function allGroupKeys(root)"),
+  lift("treeMatches", "function treeMatches(root, segments, needle)"),
+  lift("flattenTree", "function flattenTree(root, opts)"),
+  lift("loopTint", "function loopTint(loop)"),
+  "export { buildTree, defaultExpanded, allGroupKeys, treeMatches, flattenTree, loopTint, parse, ROW_H, HL_RANK, HL_RANK_MAX, GROUP_RANK };",
+].join("\n");
+
+const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
+
+let pass = 0, fail = 0;
+const check = (name, actual, expected) => {
+  if (JSON.stringify(actual) === JSON.stringify(expected)) { pass++; console.log("  ok   " + name); }
+  else { fail++; console.log(`  FAIL ${name}\n       expected ${JSON.stringify(expected)}\n       actual   ${JSON.stringify(actual)}`); }
+};
+
+const raw = readFileSync(FIXTURE, "utf8");
+const doc = m.parse(raw);
+const root = m.buildTree(doc.segments);
+
+// Convenience: walk down a chain of group ids from the root.
+const child = (node, id) => node.children.find((c) => c.kind === "group" && c.id === id);
+const groups = (node) => node.children.filter((c) => c.kind === "group");
+const leaves = (node) => node.children.filter((c) => c.kind === "segment");
+const flatten = (opts) => m.flattenTree(root, Object.assign({
+  segments: doc.segments,
+  expanded: new Set(),
+  componentSep: doc.componentSep,
+}, opts));
+
+console.log("\n[1] the envelope nests as the segments imply");
+const isa = child(root, "ISA");
+const gs = child(isa, "GS");
+const st = child(gs, "ST");
+check("one interchange at the top", root.children.map((c) => c.id), ["ISA"]);
+check("interchange is labelled", isa.label, "Interchange");
+check("interchange counts every segment in the file", isa.count, doc.segments.length);
+check("functional group nests in the interchange", gs.label, "Functional group");
+check("transaction nests in the functional group", st.label, "Transaction 0001");
+check("transaction detail is the set identifier", st.detail, "837");
+
+console.log("\n[2] a group's opening segment is also its first child");
+check("ISA group opens on segment 0", isa.seg, 0);
+check("its first child is that same ISA segment", isa.children[0].seg, 0);
+check("the first child is a leaf, not a group", isa.children[0].kind, "segment");
+// Every segment must appear exactly once as a leaf, or the flattened list
+// would either duplicate rows or silently drop some.
+const seen = [];
+(function collect(node) {
+  if (node.kind === "segment") { seen.push(node.seg); return; }
+  node.children.forEach(collect);
+})(root);
+check("every segment appears exactly once", seen, doc.segments.map((_, i) => i));
+
+console.log("\n[3] HL loops nest through their parent pointers");
+const hl1 = child(st, "HL");
+const hl2 = child(hl1, "HL");
+check("first HL sits under the transaction", hl1.label, "Information source");
+check("second HL nests inside the first, not beside it", hl2.label, "Subscriber");
+check("first HL is labelled with its own id", hl1.detail, "HL 1");
+check("transaction has exactly one HL child",
+  groups(st).filter((g) => g.id === "HL").length, 1);
+
+console.log("\n[4] claims and service lines");
+const clm = child(hl2, "CLM");
+check("claim nests inside the subscriber loop", clm.label, "Claim 1");
+check("claim detail is the patient account number", clm.detail, "PATIENTACCTNUM");
+const lines = groups(clm).filter((g) => g.id === "LX");
+check("two service lines under the claim", lines.map((g) => g.label), ["Line 1", "Line 2"]);
+check("claim covers CLM, HI, NM1 and both lines", clm.count, 9);
+check("line 1 holds LX, SV1, DTP", lines[0].count, 3);
+
+console.log("\n[5] trailers close their own group, not the last one open");
+check("SE is a child of the transaction", leaves(st).map((l) => doc.segments[l.seg].id).includes("SE"), true);
+check("SE is not a child of the claim", leaves(clm).map((l) => doc.segments[l.seg].id).includes("SE"), false);
+check("GE is a child of the functional group", leaves(gs).map((l) => doc.segments[l.seg].id), ["GS", "GE"]);
+check("IEA is a child of the interchange", leaves(isa).map((l) => doc.segments[l.seg].id), ["ISA", "IEA"]);
+
+console.log("\n[6] default and preset expansions");
+const byDefault = m.defaultExpanded(root);
+check("default opens the envelope and the HL loops", byDefault.has(isa.key) && byDefault.has(st.key) && byDefault.has(hl2.key), true);
+check("default stops above the claims", byDefault.has(clm.key), false);
+check("default stops above the service lines", byDefault.has(lines[0].key), false);
+check("default opens the entity loops, which are small", byDefault.has(child(hl2, "NM1").key), true);
+const everyGroup = m.allGroupKeys(root);
+check("expand-all covers claims and lines too", everyGroup.has(clm.key) && everyGroup.has(lines[0].key), true);
+check("expand-all opens groups only, never segments",
+  [...everyGroup].filter((k) => k[0] === "s").length, 0);
+
+console.log("\n[7] flattening to fixed-height rows");
+check("collapsed to nothing leaves the interchange visible", flatten({}).length, 1);
+check("that one row is the interchange header", flatten({})[0].type, "group");
+// 31 segments + 14 group headers: ISA, GS, ST, 1000A, 1000B, 2000A, 2010AA,
+// 2000B, 2010BA, 2010BB, 2300, 2310A and both 2400s.
+check("every group open shows every segment plus its headers",
+  flatten({ expanded: everyGroup }).length, doc.segments.length + 14);
+const openRows = flatten({ expanded: everyGroup });
+check("no element rows until a segment is opened",
+  openRows.filter((r) => r.type === "element" || r.type === "component").length, 0);
+check("rows carry the depth the indent is drawn from",
+  openRows.slice(0, 4).map((r) => r.depth), [0, 1, 1, 2]);
+check("default view hides the claim's contents",
+  flatten({ expanded: byDefault }).some((r) => r.seg === clm.seg && r.type === "segment"), false);
+
+console.log("\n[8] an opened segment becomes one row per element");
+// SV1*HC:99213*100*UN*1***1 -- seven elements, the first a two-part composite.
+const sv1 = doc.segments.findIndex((s) => s.id === "SV1");
+const withSv1 = new Set([...everyGroup, "s" + sv1]);
+const sv1Rows = flatten({ expanded: withSv1 });
+check("row count grows by the elements plus their components",
+  sv1Rows.length - openRows.length, doc.segments[sv1].elements.length + 2);
+const elementRows = sv1Rows.filter((r) => r.type === "element");
+check("one element row per element", elementRows.length, doc.segments[sv1].elements.length);
+check("element rows know which element they are", elementRows.map((r) => r.el), [0, 1, 2, 3, 4, 5, 6]);
+const componentRows = sv1Rows.filter((r) => r.type === "component");
+check("the composite splits into two component rows", componentRows.map((r) => r.part), [0, 1]);
+check("components sit one level below their element",
+  componentRows[0].depth - elementRows[0].depth, 1);
+check("component rows point back at the element", componentRows.map((r) => r.el), [0, 0]);
+
+console.log("\n[9] masking changes the row count, not just the paint");
+// A masked value shows no component breakdown -- splitting one would hand
+// back exactly what the mask hides -- so the flattener has to know about it.
+const phiDoc = m.parse(raw.replace("N3*456 ELM ST~", "N3*456 ELM ST:APT 2~"));
+const phiRoot = m.buildTree(phiDoc.segments);
+const n3 = phiDoc.segments.findIndex((s, i) => s.id === "N3" && i > 10);
+const phiOpts = (mask) => ({
+  segments: phiDoc.segments,
+  expanded: new Set([...m.allGroupKeys(phiRoot), "s" + n3]),
+  componentSep: phiDoc.componentSep,
+  mask,
+});
+const clear = m.flattenTree(phiRoot, phiOpts(false));
+const masked = m.flattenTree(phiRoot, phiOpts(true));
+check("unmasked, the address splits into components",
+  clear.filter((r) => r.type === "component" && r.seg === n3).length, 2);
+check("masked, the breakdown disappears",
+  masked.filter((r) => r.type === "component" && r.seg === n3).length, 0);
+check("masked list is exactly two rows shorter", clear.length - masked.length, 2);
+
+console.log("\n[10] filtering keeps matches and the path down to them");
+const keep = m.treeMatches(root, doc.segments, "99213");
+const filtered = flatten({ match: keep, expanded: new Set() });
+check("a filter forces the path open even from a collapsed tree",
+  filtered.map((r) => doc.segments[r.seg].id), ["ISA", "GS", "ST", "HL", "HL", "CLM", "LX", "SV1"]);
+check("the only leaf shown is the match itself",
+  filtered.filter((r) => r.type === "segment").map((r) => r.seg), [sv1]);
+check("the other service line is gone",
+  filtered.filter((r) => doc.segments[r.seg].id === "LX").length, 1);
+check("a filter matching nothing empties the list",
+  flatten({ match: m.treeMatches(root, doc.segments, "zzzznotthere") }).length, 0);
+check("a segment ID is matchable on its own",
+  flatten({ match: m.treeMatches(root, doc.segments, "dmg") })
+    .filter((r) => r.type === "segment").length, 1);
+
+console.log("\n[11] HL hierarchies with several children and broken pointers");
+const seg = (line) => {
+  const [id, ...elements] = line.split("*");
+  return { id, elements };
+};
+const twoSubs = [
+  "ST*837*0001", "HL*1**20*1", "NM1*85*2*PROVIDER",
+  "HL*2*1*22*0", "CLM*A*100", "HL*3*1*22*0", "CLM*B*200", "SE*7*0001",
+].map(seg);
+const t2 = m.buildTree(twoSubs);
+const billing = child(child(t2, "ST"), "HL");
+const subs = groups(billing).filter((g) => g.id === "HL");
+check("both subscribers hang off the same billing provider",
+  subs.map((g) => g.label), ["Subscriber", "Subscriber"]);
+check("each subscriber keeps its own claim",
+  subs.map((g) => groups(g)[0].detail), ["A", "B"]);
+check("claim numbering runs across the transaction",
+  subs.map((g) => groups(g)[0].label), ["Claim 1", "Claim 2"]);
+check("the billing provider name opened its own entity loop",
+  groups(billing).filter((g) => g.id === "NM1").map((g) => g.loop), ["2010AA"]);
+
+const dangling = ["ST*837*0001", "HL*1**20*1", "HL*9*7*22*0", "SE*3*0001"].map(seg);
+const t3 = m.buildTree(dangling);
+const stt = child(t3, "ST");
+check("an HL pointing at a parent that never opened falls back to the transaction",
+  groups(stt).length, 2);
+check("it is not swallowed by the previous HL", groups(groups(stt)[0]).length, 0);
+
+console.log("\n[12] degenerate documents still build");
+check("no segments at all", m.buildTree([]).children, []);
+const bare = "ISA*00*          *00*          *ZZ*A              *ZZ*B              *230101*1200*^*00501*000000001*0*T*:~\nIEA*1*000000001~\n";
+const bareRoot = m.buildTree(m.parse(bare).segments);
+check("an envelope with nothing in it", bareRoot.children.map((c) => c.id), ["ISA"]);
+check("both its segments are leaves of the interchange", bareRoot.children[0].count, 2);
+// A fragment with no envelope at all: everything hangs off the root rather
+// than being dropped.
+const orphan = m.buildTree(["NM1*IL*1*DOE", "N3*1 MAIN ST"].map(seg));
+check("segments with no envelope stay reachable", orphan.children.length, 2);
+check("and they are leaves", orphan.children.map((c) => c.kind), ["segment", "segment"]);
+// LX before any CLM, which malformed files do produce.
+const looseLx = m.buildTree(["ST*837*1", "LX*1", "SV1*HC:1*5", "SE*4*1"].map(seg));
+check("a service line with no claim attaches to the transaction",
+  groups(child(looseLx, "ST")).map((g) => g.label), ["Line 1"]);
+
+console.log("\n[13] loop identifiers on the sample 837P");
+check("HL levels map to the 2000 series", [hl1.loop, hl2.loop], ["2000A", "2000B"]);
+check("claim is 2300", clm.loop, "2300");
+check("service lines are 2400", lines.map((g) => g.loop), ["2400", "2400"]);
+check("submitter and receiver are the 1000 series",
+  groups(st).filter((g) => g.id === "NM1").map((g) => g.loop), ["1000A", "1000B"]);
+check("billing provider name is 2010AA", child(hl1, "NM1").loop, "2010AA");
+check("subscriber and payer names are the 2010B series",
+  groups(hl2).filter((g) => g.id === "NM1").map((g) => g.loop), ["2010BA", "2010BB"]);
+check("the referring provider inside the claim is 2310A",
+  groups(clm).filter((g) => g.id === "NM1").map((g) => g.loop), ["2310A"]);
+check("the envelope carries no loop id", [isa.loop, gs.loop, st.loop], ["", "", ""]);
+check("plain segments carry no loop id",
+  leaves(hl2).every((l) => !l.loop), true);
+
+console.log("\n[14] the same segment names different loops in different places");
+// NM1*82 is the rendering provider at 2310B in a claim and 2420A in a line;
+// NM1*IL is the subscriber at 2010BA but the other subscriber at 2330A.
+const cob = [
+  "ST*837*0001", "HL*1**20*1", "NM1*85*2*PROVIDER",
+  "HL*2*1*22*0", "SBR*P*18", "NM1*IL*1*SUB", "NM1*PR*2*PAYER",
+  "CLM*A*100", "NM1*82*1*RENDERING",
+  "SBR*S*18", "NM1*IL*1*OTHERSUB", "NM1*PR*2*OTHERPAYER",
+  "LX*1", "SV1*HC:1*5", "NM1*82*1*LINERENDER", "LIN**N4*12345", "SVD*PAYER*50*HC:1",
+  "SE*18*0001",
+].map(seg);
+const cobRoot = m.buildTree(cob);
+const cobSt = child(cobRoot, "ST");
+const cobClaim = child(child(child(cobSt, "HL"), "HL"), "CLM");
+check("a claim holds the rendering provider, the COB block and the line",
+  groups(cobClaim).map((g) => g.loop), ["2310B", "2320", "2400"]);
+const other = child(cobClaim, "SBR");
+check("2320 is opened by the SBR inside the claim", other.loop, "2320");
+check("the names inside it are the 2330 series",
+  groups(other).map((g) => g.loop), ["2330A", "2330B"]);
+const cobLine = child(cobClaim, "LX");
+check("the same NM1*82 is 2420A inside a service line",
+  groups(cobLine).map((g) => g.loop), ["2420A", "2410", "2430"]);
+// The SBR in 2000B names no loop, and must not be mistaken for a 2320.
+const cobSub = child(child(cobSt, "HL"), "HL");
+check("the subscriber's own SBR stays a plain segment",
+  leaves(cobSub).map((l) => cob[l.seg].id), ["HL", "SBR"]);
+check("2320 did not swallow the service line",
+  groups(other).filter((g) => g.id === "LX").length, 0);
+
+// 2000C: a patient hierarchical level under a subscriber.
+const withPatient = m.buildTree([
+  "ST*837*0001", "HL*1**20*1", "HL*2*1*22*1", "NM1*IL*1*SUB",
+  "HL*3*2*23*0", "NM1*QC*1*CHILD", "CLM*P*50", "SE*8*0001",
+].map(seg));
+const patient = child(child(child(child(withPatient, "ST"), "HL"), "HL"), "HL");
+check("the patient level is 2000C", patient.loop, "2000C");
+check("and the name inside it is 2010CA", child(patient, "NM1").loop, "2010CA");
+
+console.log("\n[15] filtering by loop id");
+const loopKeep = m.treeMatches(root, doc.segments, "2010ba");
+const loopRows = flatten({ match: loopKeep, expanded: new Set() });
+check("a loop id pulls its whole contents through, not just the header",
+  loopRows.map((r) => doc.segments[r.seg].id),
+  ["ISA", "GS", "ST", "HL", "HL", "NM1", "NM1", "N3", "N4", "DMG"]);
+check("the payer loop beside it is not dragged in",
+  loopRows.filter((r) => r.type === "group" && r.node.loop === "2010BB").length, 0);
+check("a loop id that isn't in the file matches nothing",
+  flatten({ match: m.treeMatches(root, doc.segments, "2420a") }).length, 0);
+check("partial loop ids still match",
+  flatten({ match: m.treeMatches(root, doc.segments, "2400") })
+    .filter((r) => r.type === "group" && r.node.loop === "2400").length, 2);
+
+console.log("\n[16] indent rails");
+// Each row carries one flag per ancestor: does that ancestor still have a
+// sibling below? That is what decides whether its rail keeps going past this
+// row. Every row draws only its own slice, so the list can be cut anywhere.
+const railed = flatten({ expanded: everyGroup });
+check("a rail flag per ancestor level",
+  railed.every((r) => r.guides.length === r.depth), true);
+check("the top-level interchange has no rails", railed[0].guides, []);
+check("it is also the only thing at its level, so it is last", railed[0].last, true);
+// ISA holds the ISA segment, the GS group and the IEA segment: the first two
+// have more to come, the last does not.
+const inIsa = railed.filter((r) => r.depth === 1);
+check("last child of the interchange is flagged last",
+  inIsa.map((r) => r.last), [false, false, true]);
+check("children of a last-child parent draw no rail at its level",
+  inIsa.every((r) => r.guides[0] === false), true);
+
+// Inside the transaction, which is not its parent's last child, every
+// descendant must keep the rail at the functional group's level alive.
+const stRow = railed.find((r) => r.type === "group" && r.node.label === "Transaction 0001");
+const clmRow = railed.find((r) => r.type === "group" && r.node.loop === "2300");
+check("the transaction sits two levels in, under ISA and GS", stRow.depth, 2);
+check("the claim's rails run the whole way back up",
+  clmRow.guides.length, clmRow.depth);
+// The claim is the last thing in the subscriber loop, but the subscriber
+// loop is not the last thing in the billing-provider loop, so the rail at
+// that outer level has to keep going past the claim.
+check("the claim closes its own loop", clmRow.last, true);
+const lineRows = railed.filter((r) => r.type === "group" && r.node.loop === "2400");
+check("line 1 keeps its rail alive for line 2", lineRows.map((r) => r.last), [false, true]);
+// SV1 sits inside line 1. The rail at line 1's own level must still be drawn
+// beside it, because line 2 is coming; the rail at the claim's level must not,
+// because the claim ends there.
+const sv1Row = railed.find((r) => r.type === "segment" && r.seg === sv1);
+check("a segment inside line 1 keeps line 1's rail beside it",
+  sv1Row.guides[lineRows[0].depth], true);
+check("but not the rail of a loop that has already closed",
+  sv1Row.guides[clmRow.depth], false);
+
+// An opened segment's element rows hang off it, and the last element ends
+// the rail. Components hang off their element the same way.
+check("only the final element is flagged last",
+  elementRows.map((r) => r.last), [false, false, false, false, false, false, true]);
+check("elements sit one level below their segment",
+  elementRows[0].depth, sv1Rows.find((r) => r.type === "segment" && r.seg === sv1).depth + 1);
+check("components hang off a still-continuing element",
+  componentRows[0].guides[componentRows[0].depth - 1], true);
+check("and the final component closes its own rail",
+  componentRows.map((r) => r.last), [false, true]);
+
+console.log("\n[17] loop ids are coloured by what they describe");
+const tint = (loop) => m.loopTint(loop).trim();
+check("header parties", [tint("1000A"), tint("1000B")], ["lp-head", "lp-head"]);
+check("hierarchy and the names inside it",
+  ["2000A", "2000B", "2000C", "2010AA", "2010BA", "2010CA"].map(tint),
+  ["lp-hier", "lp-hier", "lp-hier", "lp-hier", "lp-hier", "lp-hier"]);
+check("everything hanging off the claim",
+  ["2300", "2310A", "2310F", "2320", "2330A", "2330G"].map(tint),
+  ["lp-claim", "lp-claim", "lp-claim", "lp-claim", "lp-claim", "lp-claim"]);
+check("everything hanging off the service line",
+  ["2400", "2410", "2420A", "2420H", "2430", "2440"].map(tint),
+  ["lp-line", "lp-line", "lp-line", "lp-line", "lp-line", "lp-line"]);
+check("the envelope has no loop and so no tint", m.loopTint(""), "");
+// Every loop the builder can actually produce must land in a band, or it
+// renders in the default grey and looks like an oversight.
+const everyLoop = new Set();
+for (const file of [root, cobRoot, withPatient]) {
+  (function walk(n) {
+    if (n.kind !== "group") return;
+    if (n.loop) everyLoop.add(n.loop);
+    n.children.forEach(walk);
+  })(file);
+}
+check("every loop the samples produce is banded",
+  [...everyLoop].filter((l) => !m.loopTint(l)), []);
+check("and there are enough of them for that to mean something", everyLoop.size >= 19, true);
+
+console.log("\n[18] the row height the virtual list depends on");
+check("ROW_H is the fixed height every tree row is drawn at", m.ROW_H, 24);
+check("HL ranks sit between the transaction and the claim",
+  m.HL_RANK > m.GROUP_RANK.ST && m.HL_RANK_MAX < m.GROUP_RANK.CLM, true);
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

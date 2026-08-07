@@ -593,6 +593,274 @@
     padding: 0 1px;
   }
 
+  /* ---- structure tree ------------------------------------------------- */
+  /* The tree keeps the ledger's 24px rhythm because it is virtualized
+     against the same ROW_H: a group header, a segment, an element and a
+     component are all exactly one row tall. Depth is carried by padding on
+     a flat list rather than by nested elements, so the list can be sliced
+     at any offset and still indent correctly. */
+  /* Sticky: on a large file the tree is thousands of rows deep, and having
+     to scroll back to the top to reach the filter made it unusable. Sticks
+     to whichever ancestor scrolls -- the pane on a wide layout, the window
+     on a narrow one. */
+  .tree-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  /* The pane it scrolls in carries 12px of top padding, and a sticky child
+     pins at the top of the scrollport -- so rows scrolling by stayed visible
+     in that strip, above the toolbar. This masks it: an opaque band that
+     travels with the toolbar and is clipped by the pane. Bled sideways too,
+     so the row list's rounded corners don't show at the edges. */
+  .tree-toolbar::before {
+    content: "";
+    position: absolute;
+    left: -24px; right: -24px;
+    bottom: 100%;
+    height: 40px;
+    background: var(--bg);
+  }
+  .tree-toolbar input[type="text"] { flex: 1; min-width: 160px; }
+  .tree-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .trow {
+    display: flex;
+    align-items: center;
+    /* No gap: the rail and chevron cells must tile exactly, or a child's
+       guide line stops lining up with its parent's chevron. Spacing between
+       the text columns is carried by their own margins instead. */
+    gap: 0;
+    width: 100%;
+    height: 28px;
+    padding: 0 10px 0 7px;
+    background: var(--panel);
+    border: 0;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--ink-2);
+    font-family: var(--sans);
+    font-size: var(--step--1);
+    text-align: left;
+    cursor: default;
+  }
+  /* Banding comes from the structure, not from alternating rows: only group
+     headers are tinted, so the eye reads the hierarchy instead of a stripe
+     pattern that cuts across it. */
+  .tgroup { background: var(--panel-2); }
+  .trow:hover { background: var(--line-soft); }
+  /* The node the user last clicked or arrowed onto. Same treatment the
+     document list gives a segment jumped to from a finding. */
+  .trow.sel { background: var(--signal-wash); border-left-color: var(--signal); }
+  .trow.sel .tlabel, .trow.sel .tpos { color: var(--signal-2); }
+  .trow:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+  .trow.touched-shift { border-left-color: var(--shift); }
+  .trow.touched-swap  { border-left-color: var(--swap); }
+  .tgroup, .tseg.open-able { cursor: pointer; }
+  .tgroup .tlabel { color: var(--ink); font-weight: 600; }
+
+  /* Indent rails. One cell per ancestor level, each drawing its own slice of
+     a vertical line; stacked down the list they read as continuous guides.
+     Doing it per row rather than as one tall element is what keeps them
+     correct under virtualization, where the list is cut at arbitrary rows.
+     These also carry the indent, so rails and text cannot drift apart. */
+  .tguide {
+    position: relative;
+    flex: none;
+    width: 16px;
+    align-self: stretch;
+  }
+  /* Drawn at the cell's centre rather than its edge, because one level down
+     that same x is where the parent's chevron sits -- the rail has to run
+     through it, not beside it. Every rail, elbow and chevron in the tree is
+     centred on this 7px offset. */
+  .tguide.on::before {
+    content: "";
+    position: absolute;
+    left: 7px; top: 0; bottom: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  /* The disclosure control: a real 16px target with a drawn triangle rather
+     than a text glyph, so it is the same shape and weight on every platform. */
+  .tcar {
+    position: relative;
+    flex: none;
+    width: 16px;
+    align-self: stretch;
+    color: var(--slate);
+  }
+  /* A 16px square rather than the full row height, so the hover pill reads
+     as a button instead of a tall bar. Leaf elbows keep the stretch. */
+  .tcar.shut, .tcar.open {
+    align-self: center;
+    height: 16px;
+    border-radius: 3px;
+  }
+  .tcar.shut::before,
+  .tcar.open::before {
+    content: "";
+    position: absolute;
+    width: 0; height: 0;
+  }
+  .tcar.shut::before {
+    left: 5px; top: 4px;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+  }
+  .tcar.open::before {
+    left: 3px; top: 5px;
+    border-top: 5px solid currentColor;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+  }
+  /* --signal against --slate is barely a change in the light theme; --ink
+     plus a filled pill reads at a glance in both. */
+  .tgroup:hover > .tcar, .tseg.open-able:hover > .tcar {
+    color: var(--ink);
+    background: var(--line);
+  }
+
+  /* Leaf rows get the elbow the chevron would otherwise occupy: the rail
+     comes down from the parent and turns into the row. On the last child it
+     stops at the turn instead of carrying on into empty space. */
+  .tcar.leaf::before {
+    content: "";
+    position: absolute;
+    left: 7px; top: 0; bottom: 0;
+    border-left: 1px solid var(--line);
+  }
+  .tcar.leaf.last::before { bottom: auto; height: 14px; }
+  .tcar.leaf::after {
+    content: "";
+    position: absolute;
+    left: 7px; top: 13px;
+    width: 6px;
+    border-top: 1px solid var(--line);
+  }
+  /* Loop identifiers from the implementation guide -- 2010BA, 2400. Held in
+     a fixed column so they read as a spine down the tree rather than as
+     text scattered at every indent. */
+  /* The text columns supply their own spacing now that the row has no gap. */
+  .tloop, .tid, .tlabel, .tvals, .tcount, .tpos, .tmean { margin-left: 8px; }
+  /* The loop id sits on a chip, not as loose text: at 10px it was too easy to
+     skim past, and a filled shape in a fixed-width column reads as a label
+     down the whole tree. Uniform width so the chips line up as a spine. */
+  .tloop {
+    flex: none;
+    width: 46px;
+    padding: 2px 0;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-align: center;
+    /* Filled, not washed. The -wash tokens are tuned for row-sized areas and
+       vanish at 46x14px, especially under the hover tint. A saturated fill
+       stays legible on panel, on the group tint, on hover and on the
+       selection wash alike -- the chip stops depending on what is behind it.
+       Same trick as .btn.primary: the accents lighten in dark mode, so the
+       ink flips rather than the fill. Empty chips carry no text, so setting
+       this on the base class costs nothing. */
+    color: #fff;
+  }
+  @media (prefers-color-scheme: dark) { .tloop { color: #06181a; } }
+  :root[data-theme="dark"] .tloop { color: #06181a; }
+  :root[data-theme="light"] .tloop { color: #fff; }
+
+  /* Four bands: header parties, hierarchy, claim, service line. Colour
+     carries the grouping the numbers already imply, so a 2420A reads as
+     "something on the line" before it is read as a number at all.
+     Deliberately confined to the chip: row backgrounds already carry
+     group-vs-content, hover and selection. Red is left out on purpose --
+     --danger means a finding, and a red loop would read as a problem. */
+  .tloop.lp-head  { background: var(--slate); }
+  .tloop.lp-hier  { background: var(--signal); }
+  .tloop.lp-claim { background: var(--swap); }
+  .tloop.lp-line  { background: var(--shift); }
+  .tid {
+    flex: none;
+    min-width: 32px;
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: .02em;
+  }
+  .tlabel {
+    flex: none;
+    max-width: 176px;
+    font-size: 11px;
+    color: var(--slate);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tvals {
+    flex: 1; min-width: 0;
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    color: var(--ink-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tvals mark {
+    background: var(--swap-wash);
+    color: var(--swap);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  /* Two different quantities share this column: how many segments a group
+     contains, and which segment a row is. Left alike they read as one
+     sequence that keeps jumping between 9,015 and 1, so they are given
+     visibly different shapes -- a filled badge for the count, a #-prefixed
+     number for the position. */
+  .tcount {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--slate);
+    font-variant-numeric: tabular-nums;
+  }
+  .tgroup > .tcount {
+    padding: 1px 7px;
+    border-radius: 9px;
+    background: var(--line-soft);
+    color: var(--ink-2);
+    font-weight: 700;
+  }
+  .tgroup.sel > .tcount { background: var(--panel); color: var(--signal-2); }
+  .tseg > .tcount { opacity: .8; }
+  /* Element and component rows: position, value, meaning -- the same three
+     columns the inspector dialog uses, so the two readings agree. */
+  .tpos {
+    flex: none;
+    min-width: 72px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--slate);
+  }
+  /* Position, value, meaning -- the inspector dialog's three columns. The
+     value takes a fixed column rather than all the free space, so the
+     meaning sits beside what it describes instead of being flung to the far
+     edge of a wide window. It still shrinks on a narrow one. */
+  .tel .tvals, .tsub .tvals { flex: 0 1 32ch; }
+  .tmean {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--slate);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tel .tvals, .tsub .tvals { color: var(--ink); }
+  .tsub .tpos { opacity: .8; }
+  .tel .tvals .empty, .tsub .tvals .empty { color: var(--slate); font-style: italic; font-family: var(--sans); }
+
   /* ---- element inspector --------------------------------------------- */
   dialog.inspect {
     width: min(720px, calc(100vw - 40px));
@@ -1095,6 +1363,7 @@
 
       <div class="tabs" role="tablist">
         <button class="tab" id="tabDocument" role="tab" aria-selected="true" type="button">Document</button>
+        <button class="tab" id="tabTree"     role="tab" aria-selected="false" type="button">Tree</button>
         <button class="tab" id="tabClaims"   role="tab" aria-selected="false" type="button">Claims</button>
         <button class="tab" id="tabChecks"   role="tab" aria-selected="false" type="button">Checks</button>
         <button class="tab" id="tabChanges"  role="tab" aria-selected="false" type="button" hidden>Changes</button>
@@ -1103,6 +1372,7 @@
 
       <div class="panes">
         <div id="paneDocument"></div>
+        <div id="paneTree" hidden></div>
         <div id="paneClaims" hidden></div>
         <div id="paneChecks" hidden></div>
         <div id="paneChanges" hidden></div>
@@ -1935,6 +2205,10 @@ const MAX_RENDERED_OUTPUT = 400000;
 // Row height in px. Must match `.row { height }` exactly -- the virtual
 // list multiplies by it to size the scroll container and place the window.
 const ROW_H = 24;
+// The tree runs looser than the ledger: it is read as structure rather than
+// scanned as a table, and at 24px a parent and its children crowd together.
+// Must match `.trow { height }` exactly, for the same reason as above.
+const TREE_ROW_H = 28;
 // Rows drawn above and below the viewport so a fast scroll doesn't show gaps.
 const OVERSCAN = 12;
 
@@ -1959,6 +2233,18 @@ const state = {
   mask: false,        // hide PHI on screen; never affects the output file
   findings: null,     // validation results, built lazily when Checks is opened
   focus: null,        // segment jumped to from a finding, highlighted in the list
+
+  // Tree tab. The structure is rebuilt whenever the document changes; the
+  // expansion set outlives it, because its keys are segment indices and a
+  // rule run rewrites values without moving any segment.
+  tree: null,         // root of the structural tree, built lazily when Tree is opened
+  treeExpanded: null, // Set of node keys currently open
+  treeRows: [],       // the tree flattened to fixed-height rows, what gets painted
+  treeWindow: null,   // {first, last} slice of `treeRows` currently in the DOM
+  treeFilter: "",
+  treeNeedle: "",     // lower-cased tree filter, for match highlighting
+  treeFocus: 0,       // row index holding the roving tabindex
+  treeSelected: null, // key of the highlighted node; survives expand/collapse
 };
 
 /* ---- outline ------------------------------------------------------- */
@@ -2002,6 +2288,340 @@ function buildOutline(segments) {
   return nodes;
 }
 
+/* ---- structure tree -------------------------------------------------- */
+
+// Where each group-opening segment sits on one rank scale, so a single
+// stack can close whatever the next opener implies. HL takes a range
+// rather than a single rank: 837 nests its hierarchical loops through
+// parent pointers -- HL-02 names the parent's HL-01 -- so a subscriber
+// loop inside a billing-provider loop is genuinely one level deeper, and
+// the depth isn't known until the pointer is read.
+const GROUP_RANK = { ISA: 0, GS: 1, ST: 2, CLM: 100, LX: 101 };
+const HL_RANK = 3;      // an HL with no parent
+const HL_RANK_MAX = 99; // deepest HL nesting; CLM at 100 always closes them all
+
+// Trailers belong to the group they close, not to whatever was still open
+// inside it: an SE reads as part of its transaction, never as part of the
+// last service line. The value is the rank of the group the trailer lands in.
+const TRAILER_RANK = { SE: 2, GE: 1, IEA: 0 };
+
+// The entity loops -- 2010BA, 2310B, 2420A -- are the innermost thing the
+// guide names, so they close each other and everything closes them.
+const ENTITY_RANK = 200;
+
+/* Loop identifiers, 837P 005010X222A1.
+ *
+ * The implementation guide names loops by number, and every conversation
+ * about a production file uses those numbers rather than segment positions
+ * -- "the 2010BA name is wrong", "put the modifier in 2400". Showing them
+ * is most of what makes a structural view readable to someone who works
+ * from the guide.
+ *
+ * Which loop an NM1 opens depends on its entity qualifier *and* on where it
+ * sits: NM1*82 is the rendering provider at 2310B inside a claim and at
+ * 2420A inside a service line, and NM1*IL is the subscriber at 2010BA but
+ * the other subscriber at 2330A. So the outer key is the enclosing loop.
+ */
+const HL_LOOPS = { "20": "2000A", "22": "2000B", "23": "2000C" };
+
+const ENTITY_LOOPS = {
+  ST: { "41": ["1000A", "Submitter"], "40": ["1000B", "Receiver"] },
+  "2000A": {
+    "85": ["2010AA", "Billing provider"], "87": ["2010AB", "Pay-to address"],
+    PE: ["2010AC", "Pay-to plan"],
+  },
+  "2000B": { IL: ["2010BA", "Subscriber"], PR: ["2010BB", "Payer"] },
+  "2000C": { QC: ["2010CA", "Patient"] },
+  "2300": {
+    DN: ["2310A", "Referring provider"], "82": ["2310B", "Rendering provider"],
+    "77": ["2310C", "Service facility"], DQ: ["2310D", "Supervising provider"],
+    PW: ["2310E", "Ambulance pick-up"], "45": ["2310F", "Ambulance drop-off"],
+  },
+  "2320": {
+    IL: ["2330A", "Other subscriber"], PR: ["2330B", "Other payer"],
+    DN: ["2330C", "Other payer referring provider"], "82": ["2330D", "Other payer rendering provider"],
+    "77": ["2330E", "Other payer service facility"], DQ: ["2330F", "Other payer supervising provider"],
+    "85": ["2330G", "Other payer billing provider"],
+  },
+  "2400": {
+    "82": ["2420A", "Rendering provider"], QB: ["2420B", "Purchased service provider"],
+    "77": ["2420C", "Service facility"], DQ: ["2420D", "Supervising provider"],
+    DK: ["2420E", "Ordering provider"], DN: ["2420F", "Referring provider"],
+    PW: ["2420G", "Ambulance pick-up"], "45": ["2420H", "Ambulance drop-off"],
+  },
+};
+
+// Loops anchored by something other than an NM1, keyed the same way. 2320
+// is a sibling of the service lines rather than a child, so it takes the
+// service line's rank and the two close each other; the rest sit inside a
+// service line and take the entity rank.
+const ANCHOR_LOOPS = {
+  "2300": { SBR: ["2320", "Other subscriber information", GROUP_RANK.LX] },
+  "2400": {
+    LIN: ["2410", "Drug identification", ENTITY_RANK],
+    SVD: ["2430", "Line adjudication", ENTITY_RANK],
+    LQ: ["2440", "Form identification", ENTITY_RANK],
+  },
+};
+
+// The loop a segment is currently sitting in, which decides what its own
+// loop id would be. Entity loops are skipped: 2010BA is somewhere a segment
+// can be, but it never qualifies another entity.
+function enclosingLoop(stack) {
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const node = stack[i].node;
+    if (node.loop && ENTITY_LOOPS[node.loop]) return node.loop;
+    if (node.id === "ST") return "ST";
+  }
+  return null;
+}
+
+// Walks the interchange once and builds the nesting the segments imply:
+// interchange > functional group > transaction > HL loops > claim >
+// service line, with every other segment a leaf of whichever group is open.
+//
+// A group's own opening segment is also its first child, so the model stays
+// uniform -- every segment appears exactly once as a leaf, and a group
+// header is a label for a range rather than a fourth kind of thing. That is
+// what lets one caret per row mean one thing.
+function buildTree(segments) {
+  const root = { key: "root", kind: "group", seg: -1, id: "", label: "Document", detail: "", children: [], count: 0 };
+  const stack = [{ node: root, rank: -1 }];
+  const top = () => stack[stack.length - 1];
+  const closeTo = (rank) => { while (stack.length > 1 && top().rank >= rank) stack.pop(); };
+
+  const leaf = (i, seg) => ({ key: "s" + i, kind: "segment", seg: i, id: seg.id, label: "", detail: "", children: null, count: 1 });
+
+  // Opens a group at `rank` and seeds it with the segment that opened it.
+  const open = (rank, i, seg, label, detail, loop) => {
+    const node = { key: "g" + i, kind: "group", seg: i, id: seg.id, label, detail, loop: loop || "", children: [], count: 0 };
+    top().node.children.push(node);
+    stack.push({ node, rank });
+    node.children.push(leaf(i, seg));
+    return node;
+  };
+
+  let hlById = new Map(); // HL-01 -> the stack entry it opened, within one transaction
+  let claimNo = 0;
+
+  segments.forEach((seg, i) => {
+    const el = seg.elements;
+
+    switch (seg.id) {
+      case "ISA":
+        closeTo(GROUP_RANK.ISA);
+        open(GROUP_RANK.ISA, i, seg, "Interchange", el[12] ? "Control " + el[12] : "");
+        return;
+      case "GS":
+        closeTo(GROUP_RANK.GS);
+        open(GROUP_RANK.GS, i, seg, "Functional group", el[5] ? "Control " + el[5] : "");
+        return;
+      case "ST":
+        closeTo(GROUP_RANK.ST);
+        hlById = new Map(); // HL ids are only unique within a transaction
+        claimNo = 0;
+        open(GROUP_RANK.ST, i, seg, `Transaction ${el[1] || ""}`.trim(), el[0] || "");
+        return;
+      case "CLM":
+        closeTo(GROUP_RANK.CLM);
+        claimNo++;
+        open(GROUP_RANK.CLM, i, seg, `Claim ${claimNo}`, el[0] || "", "2300");
+        return;
+      case "LX":
+        closeTo(GROUP_RANK.LX);
+        open(GROUP_RANK.LX, i, seg, `Line ${el[0] || ""}`.trim(), "", "2400");
+        return;
+      case "NM1": {
+        // A new entity closes the previous one, whether or not this NM1
+        // turns out to name a loop the guide recognises.
+        closeTo(ENTITY_RANK);
+        const table = ENTITY_LOOPS[enclosingLoop(stack)];
+        const loop = table ? table[el[0]] : null;
+        if (loop) {
+          open(ENTITY_RANK, i, seg, loop[1], "", loop[0]);
+          return;
+        }
+        break; // an unrecognised qualifier is just a segment
+      }
+      case "HL": {
+        // An HL naming a parent nests inside it. One with no parent, or with
+        // a pointer to an HL that was never opened -- which the Checks tab
+        // reports on its own -- starts a fresh hierarchy under the transaction.
+        const parent = hlById.get(el[1]);
+        if (parent && stack.includes(parent)) {
+          while (top() !== parent) stack.pop();
+        } else {
+          closeTo(HL_RANK);
+        }
+        const rank = Math.min(top().rank >= HL_RANK ? top().rank + 1 : HL_RANK, HL_RANK_MAX);
+        open(rank, i, seg, segmentRole(seg) || `Hierarchy ${el[0] || ""}`.trim(),
+          el[0] ? "HL " + el[0] : "", HL_LOOPS[el[2]] || "");
+        hlById.set(el[0], top());
+        return;
+      }
+      default:
+        break;
+    }
+
+    const trailer = TRAILER_RANK[seg.id];
+    if (trailer !== undefined) {
+      closeTo(trailer + 1);
+      top().node.children.push(leaf(i, seg));
+      return;
+    }
+
+    // Loops anchored by something other than an NM1: the other-subscriber
+    // block inside a claim, and the drug, adjudication and form loops inside
+    // a service line.
+    const anchors = ANCHOR_LOOPS[enclosingLoop(stack)];
+    const anchored = anchors ? anchors[seg.id] : null;
+    if (anchored) {
+      closeTo(anchored[2]);
+      open(anchored[2], i, seg, anchored[1], "", anchored[0]);
+      return;
+    }
+
+    top().node.children.push(leaf(i, seg));
+  });
+
+  // Descendant segment counts, shown on each header so a collapsed group
+  // still says how much it is hiding, and the last segment index in each
+  // group, so a collapsed group can report that something inside it changed.
+  const tally = (node) => {
+    if (node.kind === "segment") { node.last = node.seg; return 1; }
+    node.count = 0;
+    node.last = node.seg;
+    for (const child of node.children) {
+      node.count += tally(child);
+      if (child.last > node.last) node.last = child.last;
+    }
+    return node.count;
+  };
+  tally(root);
+
+  return root;
+}
+
+// Opens the envelope and the hierarchy loops but stops above the claims:
+// the first useful view of a production file is its claim list, not forty
+// thousand element rows.
+function defaultExpanded(root) {
+  const open = new Set(["root"]);
+  const walk = (node) => {
+    if (node.kind !== "group") return;
+    if (node.id !== "CLM" && node.id !== "LX") open.add(node.key);
+    node.children.forEach(walk);
+  };
+  walk(root);
+  return open;
+}
+
+// Every group key, for Expand all. Segments are left closed deliberately:
+// opening every element of a large file would multiply the row count by the
+// average segment width for no reading gain.
+function allGroupKeys(root) {
+  const keys = new Set();
+  const walk = (node) => {
+    if (node.kind !== "group") return;
+    keys.add(node.key);
+    node.children.forEach(walk);
+  };
+  walk(root);
+  return keys;
+}
+
+// Keys of every node that survives the filter: a segment whose ID or values
+// contain the needle, plus every ancestor group on the way down to it.
+//
+// A loop id counts as a match on the group that carries it, and pulls its
+// whole contents through with it -- filtering for "2010BA" should hand back
+// the subscriber loop, not an empty header.
+function treeMatches(root, segments, needle) {
+  const keep = new Set();
+  const walk = (node, inMatchedLoop) => {
+    if (node.kind === "segment") {
+      const seg = segments[node.seg];
+      const hit = inMatchedLoop || [seg.id, ...seg.elements].join(" ").toLowerCase().includes(needle);
+      if (hit) keep.add(node.key);
+      return hit;
+    }
+    const self = !!node.loop && node.loop.toLowerCase().includes(needle);
+    let any = false;
+    for (const child of node.children) {
+      if (walk(child, inMatchedLoop || self)) any = true; // every child, no short-circuit
+    }
+    if (any || self) keep.add(node.key);
+    return any || self;
+  };
+  walk(root, false);
+  return keep;
+}
+
+// Depth-first walk producing the flat, fixed-height row list the virtual
+// list paints. An expanded segment becomes one row per element rather than
+// one taller card, which is the whole trick: every row is exactly ROW_H, so
+// tree mode costs a 60,000-segment interchange no more than the flat list.
+//
+// `mask` has to be known here and not only at render time, because a masked
+// value shows no component breakdown -- splitting one would hand back
+// exactly what the mask is hiding -- and that changes the row count.
+function flattenTree(root, opts) {
+  const segments = opts.segments;
+  const expanded = opts.expanded;
+  const match = opts.match || null;
+  const mask = !!opts.mask;
+  const componentSep = opts.componentSep;
+  const rows = [];
+
+  // `trail` carries one flag per ancestor: does that ancestor have a sibling
+  // still to come? That is what decides whether its indent rail keeps going
+  // past this row or stops here. Each row draws only its own slice of every
+  // rail, which is what lets the guides survive virtualization -- the list
+  // can be cut at any offset and the lines still join up.
+  const pushElements = (segIndex, depth, trail) => {
+    const seg = segments[segIndex];
+    const total = seg.elements.length;
+    seg.elements.forEach((value, e) => {
+      const last = e === total - 1;
+      rows.push({ type: "element", key: `e${segIndex}.${e}`, seg: segIndex, el: e, depth, guides: trail, last });
+      const hidden = mask && value && isPhiField(seg, e);
+      const parts = hidden ? null : splitComponents(value, componentSep);
+      if (!parts) return;
+      const sub = trail.concat(!last);
+      parts.forEach((part, p) => {
+        rows.push({
+          type: "component", key: `e${segIndex}.${e}.${p}`, seg: segIndex, el: e, part: p,
+          depth: depth + 1, guides: sub, last: p === parts.length - 1,
+        });
+      });
+    });
+  };
+
+  // A filter forces every surviving group open: a match the user cannot see
+  // is worse than a tree they did not arrange themselves. It also decides
+  // which children count as last, so the rails stop in the right place.
+  const shown = (node) => (match ? node.children.filter((c) => match.has(c.key)) : node.children);
+
+  const walk = (node, depth, trail, last) => {
+    if (node.kind === "segment") {
+      rows.push({ type: "segment", key: node.key, seg: node.seg, depth, node, guides: trail, last });
+      if (expanded.has(node.key)) pushElements(node.seg, depth + 1, trail.concat(!last));
+      return;
+    }
+
+    rows.push({ type: "group", key: node.key, seg: node.seg, depth, node, guides: trail, last });
+    if (match || expanded.has(node.key)) {
+      const kids = shown(node);
+      const inner = trail.concat(!last);
+      kids.forEach((child, i) => walk(child, depth + 1, inner, i === kids.length - 1));
+    }
+  };
+
+  const top = shown(root);
+  top.forEach((child, i) => walk(child, 0, [], i === top.length - 1));
+  return rows;
+}
+
 /* ---- theme --------------------------------------------------------- */
 $("themeBtn").addEventListener("click", () => {
   const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -2023,6 +2643,9 @@ $("maskBtn").addEventListener("click", () => {
     state.window = null;   // force a repaint of the row window
     paintWindow();
     if (!$("paneClaims").hidden) renderClaims();
+    // Not just a repaint: masking suppresses the component breakdown, so
+    // the tree's row count changes and the list has to be re-flattened.
+    if ($("treeRows")) renderTreeRows();
   }
   toast(state.mask ? "PHI hidden on screen" : "PHI visible");
 });
@@ -2094,6 +2717,16 @@ function loadFile(name, raw) {
   // Drop the previous file's results rather than leaving them behind hidden tabs.
   $("paneChanges").innerHTML = "";
   $("paneOutput").innerHTML = "";
+  // A new file gets the default view, not the last one's expansion set.
+  $("paneTree").innerHTML = "";
+  state.tree = null;
+  state.treeExpanded = null;
+  state.treeRows = [];
+  state.treeWindow = null;
+  state.treeFilter = "";
+  state.treeNeedle = "";
+  state.treeFocus = 0;
+  state.treeSelected = null;
 
   const errorSlot = $("parseError");
   try {
@@ -2288,37 +2921,63 @@ function renderRows() {
 // Pure: which slice of the list covers the fold, given how far the list's
 // top sits above it (negative once scrolled past). Kept separate from the
 // DOM so the arithmetic is testable.
-function windowRange(containerTop, viewportHeight, total) {
-  const first = Math.max(0, Math.floor(-containerTop / ROW_H) - OVERSCAN);
-  const fit = Math.ceil(viewportHeight / ROW_H) + OVERSCAN * 2;
+// `rowHeight` defaults to the ledger's, so the document list reads unchanged;
+// the tree passes its own.
+function windowRange(containerTop, viewportHeight, total, rowHeight) {
+  const h = rowHeight || ROW_H;
+  const first = Math.max(0, Math.floor(-containerTop / h) - OVERSCAN);
+  const fit = Math.ceil(viewportHeight / h) + OVERSCAN * 2;
   return { first, last: Math.min(total, first + fit) };
 }
 
-function paintWindow() {
-  const viewport = $("docViewport");
-  if (!viewport || !state.visible.length) return;
+// Shared by both virtual lists: measure where the container sits, work out
+// which slice covers the fold, and repaint only if that slice moved.
+// Returns the new window, or the one passed in when nothing changed.
+function paintVirtual(viewportId, windowId, total, previous, renderSlice, rowHeight) {
+  const viewport = $(viewportId);
+  if (!viewport || !total) return previous;
+  const h = rowHeight || ROW_H;
 
   // Measured against the screen, so this works whether the pane scrolls
   // (desktop, two-column) or the whole page does (narrow, stacked).
   const rect = viewport.getBoundingClientRect();
-  const { first, last } = windowRange(rect.top, window.innerHeight, state.visible.length);
+  const { first, last } = windowRange(rect.top, window.innerHeight, total, h);
+  if (previous && previous.first === first && previous.last === last) return previous;
 
-  if (state.window && state.window.first === first && state.window.last === last) return;
-  state.window = { first, last };
+  const win = $(windowId);
+  win.style.transform = `translateY(${first * h}px)`;
+  win.innerHTML = renderSlice(first, last);
+  return { first, last };
+}
 
-  const win = $("docWindow");
-  win.style.transform = `translateY(${first * ROW_H}px)`;
-  win.innerHTML = state.visible
-    .slice(first, last)
-    .map((i, n) => renderRow(i, state.needle, (first + n) % 2 === 1))
-    .join("");
+function paintWindow() {
+  state.window = paintVirtual("docViewport", "docWindow", state.visible.length, state.window,
+    (first, last) => state.visible
+      .slice(first, last)
+      .map((i, n) => renderRow(i, state.needle, (first + n) % 2 === 1))
+      .join(""));
+}
+
+function paintTree() {
+  state.treeWindow = paintVirtual("treeViewport", "treeWindow", state.treeRows.length, state.treeWindow,
+    (first, last) => state.treeRows
+      .slice(first, last)
+      .map((row, n) => renderTreeRow(row, first + n))
+      .join(""),
+    TREE_ROW_H);
 }
 
 let paintQueued = false;
 function queuePaint() {
   if (paintQueued) return;
   paintQueued = true;
-  requestAnimationFrame(() => { paintQueued = false; paintWindow(); });
+  requestAnimationFrame(() => {
+    paintQueued = false;
+    // A hidden pane measures as zero, so painting one would cache a window
+    // computed from nothing. Each tab resets its own on the way back in.
+    if (!$("paneDocument").hidden) paintWindow();
+    if (!$("paneTree").hidden) paintTree();
+  });
 }
 // The pane is the scroll container on wide layouts, the window on narrow ones.
 document.querySelector(".panes").addEventListener("scroll", queuePaint, { passive: true });
@@ -2474,6 +3133,280 @@ function componentHtml(value, needle) {
     .map((part) => highlight(part, needle))
     .join(`<span class="csep">${escapeHtml(sep)}</span>`);
 }
+
+/* ---- structure tree: rendering -------------------------------------- */
+
+function renderTree() {
+  if (!state.doc) return;
+  if (!state.tree) {
+    state.tree = buildTree(state.doc.segments);
+    // Kept across a rule run, which replaces the document but moves no
+    // segment; only a newly loaded file resets it to the default view.
+    if (!state.treeExpanded) state.treeExpanded = defaultExpanded(state.tree);
+  }
+
+  $("paneTree").innerHTML = `<div class="tree-toolbar">
+      <button class="btn" id="treeExpand" type="button">Expand all</button>
+      <button class="btn" id="treeCollapse" type="button">Collapse all</button>
+      <button class="btn" id="treeClaims" type="button">To claims</button>
+      <input type="text" id="treeFilter" placeholder="Filter by segment ID or value" spellcheck="false" value="${escapeHtml(state.treeFilter)}" aria-label="Filter the tree" />
+      <span class="label tree-count" id="treeCount"></span>
+    </div>
+    <div id="treeRows"></div>`;
+
+  const filterBox = $("treeFilter");
+  filterBox.addEventListener("input", () => {
+    state.treeFilter = filterBox.value;
+    state.treeFocus = 0;
+    renderTreeRows();
+  });
+
+  const reset = (keys) => {
+    state.treeExpanded = keys;
+    state.treeFocus = 0;
+    renderTreeRows();
+  };
+  $("treeExpand").addEventListener("click", () => reset(allGroupKeys(state.tree)));
+  $("treeCollapse").addEventListener("click", () => reset(new Set()));
+  $("treeClaims").addEventListener("click", () => reset(defaultExpanded(state.tree)));
+
+  renderTreeRows();
+}
+
+// Re-flattens the tree and hands the result to the virtual list. Called on
+// every toggle, so it stays a single pass with no DOM work per node.
+function renderTreeRows() {
+  const needle = state.treeFilter.trim().toLowerCase();
+  state.treeNeedle = needle;
+  state.treeRows = flattenTree(state.tree, {
+    segments: state.doc.segments,
+    expanded: state.treeExpanded,
+    match: needle ? treeMatches(state.tree, state.doc.segments, needle) : null,
+    mask: state.mask,
+    componentSep: state.doc.componentSep,
+  });
+  state.treeWindow = null;
+  if (state.treeFocus >= state.treeRows.length) state.treeFocus = Math.max(0, state.treeRows.length - 1);
+
+  const count = state.treeRows.length;
+  $("treeCount").textContent = `${count.toLocaleString()} row${count === 1 ? "" : "s"}`;
+
+  if (!count) {
+    $("treeRows").innerHTML = `<div class="note">Nothing in this file matches <b>${escapeHtml(state.treeFilter)}</b>.</div>`;
+    return;
+  }
+
+  $("treeRows").innerHTML =
+    `<div class="rows-vp" id="treeViewport" style="height:${count * TREE_ROW_H}px">
+       <div class="rows-window" id="treeWindow" role="tree" aria-label="Document structure"></div>
+     </div>`;
+  paintTree();
+}
+
+// Loop ids grouped by what they describe, so the column reads as four bands
+// -- header parties, hierarchy, claim, service line -- rather than nineteen
+// unrelated numbers. Reuses the existing themed accents; no new tokens.
+function loopTint(loop) {
+  if (!loop) return "";
+  if (loop.startsWith("1000")) return " lp-head";
+  if (loop.startsWith("2000") || loop.startsWith("2010")) return " lp-hier";
+  if (loop.startsWith("23")) return " lp-claim";
+  if (loop.startsWith("24")) return " lp-line";
+  return "";
+}
+
+// True when any segment in a group's range was touched by a rule, so a
+// collapsed claim still says that something inside it changed. `touched`
+// holds only changed segments, so this stays small.
+function groupTouched(node) {
+  for (const idx of state.touched.keys()) {
+    if (idx >= node.seg && idx <= node.last) return true;
+  }
+  return false;
+}
+
+function renderTreeRow(row, index) {
+  const seg = state.doc.segments[row.seg];
+  const level = row.depth + 1;
+  const tab = index === state.treeFocus ? 0 : -1;
+  // Selection is tracked by key, not row index, so the highlight stays on
+  // the same node when expanding, collapsing or filtering moves it.
+  const stripe = row.key === state.treeSelected ? " sel" : "";
+  // One rail cell per ancestor, drawn only where that ancestor continues
+  // below this row. These also supply the indent -- there is no padding
+  // arithmetic, so the rails and the text can never drift apart.
+  const rails = row.guides.map((on) => `<span class="tguide${on ? " on" : ""}"></span>`).join("");
+  const elbow = `<span class="tcar leaf${row.last ? " last" : ""}"></span>`;
+
+  if (row.type === "group") {
+    const open = !!state.treeNeedle || state.treeExpanded.has(row.key);
+    const flag = groupTouched(row.node) ? " touched-swap" : "";
+    // The right-hand column is a segment count here and a segment number on
+    // the rows below, so both say which in the tooltip.
+    const loop = row.node.loop ? ` — loop ${row.node.loop}` : "";
+    const title = `${row.node.label}${loop} — ${row.node.count.toLocaleString()} segment${row.node.count === 1 ? "" : "s"}`;
+    return `<div class="trow tgroup${stripe}${flag}" role="treeitem" aria-level="${level}" aria-expanded="${open}" tabindex="${tab}" data-trow="${index}" data-key="${row.key}" title="${escapeHtml(title)}">
+      ${rails}<span class="tcar ${open ? "open" : "shut"}"></span>
+      <span class="tloop${loopTint(row.node.loop)}">${escapeHtml(row.node.loop)}</span>
+      <span class="tid">${escapeHtml(seg.id)}</span>
+      <span class="tlabel">${escapeHtml(row.node.label)}</span>
+      <span class="tvals">${escapeHtml(row.node.detail)}</span>
+      <span class="tcount">${row.node.count.toLocaleString()}</span>
+    </div>`;
+  }
+
+  if (row.type === "segment") {
+    const has = seg.elements.length > 0;
+    const open = has && state.treeExpanded.has(row.key);
+    const kind = state.touched.get(row.seg);
+    const name = SEGMENT_NAMES[seg.id] || "";
+    const role = segmentRole(seg);
+    const named = name && role ? `${name} — ${role}` : (name || role);
+    const title = `Segment ${(row.seg + 1).toLocaleString()}${named ? " — " + named : ""}`;
+    const sep = escapeHtml(state.doc.elementSep);
+    const values = seg.elements
+      .map((value, i) => (state.mask && value && isPhiField(seg, i)
+        ? `<span class="masked">${escapeHtml(maskText(value))}</span>`
+        : componentHtml(value, state.treeNeedle)))
+      .join(`<span class="sepc">${sep}</span>`);
+
+    return `<div class="trow tseg${has ? " open-able" : ""}${stripe}${kind ? " touched-" + kind : ""}" role="treeitem" aria-level="${level}"${has ? ` aria-expanded="${open}"` : ""} tabindex="${tab}" data-trow="${index}"${has ? ` data-key="${row.key}"` : ""} title="${escapeHtml(title)}">
+      ${rails}${has ? `<span class="tcar ${open ? "open" : "shut"}"></span>` : elbow}
+      <span class="tloop"></span>
+      <span class="tid">${escapeHtml(seg.id)}</span>
+      <span class="tlabel">${escapeHtml(role || name)}</span>
+      <span class="tvals">${values || '<span class="sepc">no elements</span>'}</span>
+      <span class="tcount">#${(row.seg + 1).toLocaleString()}</span>
+    </div>`;
+  }
+
+  // Element and component rows mirror the inspector dialog's three columns:
+  // X12 position, value, meaning.
+  const value = seg.elements[row.el];
+  const position = `${seg.id}-${String(row.el + 1).padStart(2, "0")}`;
+  const hidden = state.mask && value && isPhiField(seg, row.el);
+
+  if (row.type === "element") {
+    const codes = QUALIFIERS[seg.id] || {};
+    const meaning = codes[row.el] && codes[row.el][value] ? codes[row.el][value] : "";
+    const spec = splitComponents(value, state.doc.componentSep) ? compositeSpec(seg.id, row.el) : null;
+    const shown = value === ""
+      ? '<span class="empty">empty</span>'
+      : hidden
+        ? `<span class="masked">${escapeHtml(maskText(value))}</span>`
+        : componentHtml(value, state.treeNeedle);
+
+    return `<div class="trow tel${stripe}" role="treeitem" aria-level="${level}" tabindex="${tab}" data-trow="${index}">
+      ${rails}${elbow}
+      <span class="tpos">${escapeHtml(position)}</span>
+      <span class="tvals">${shown}</span>
+      <span class="tmean">${escapeHtml(spec ? spec.label : meaning)}</span>
+    </div>`;
+  }
+
+  const parts = splitComponents(value, state.doc.componentSep) || [];
+  const part = parts[row.part] === undefined ? "" : parts[row.part];
+  const spec = compositeSpec(seg.id, row.el);
+  const partName = spec && spec.parts[row.part] ? spec.parts[row.part] : `Component ${row.part + 1}`;
+  const decoded = spec && spec.codes && spec.codes[row.part] ? spec.codes[row.part][part] : "";
+
+  return `<div class="trow tsub${stripe}" role="treeitem" aria-level="${level}" tabindex="${tab}" data-trow="${index}">
+    ${rails}${elbow}
+    <span class="tpos">${escapeHtml(`${position}-${row.part + 1}`)}</span>
+    <span class="tvals">${part === "" ? '<span class="empty">empty</span>' : highlight(part, state.treeNeedle)}</span>
+    <span class="tmean">${escapeHtml(partName)}${decoded ? ` &middot; <b>${escapeHtml(decoded)}</b>` : ""}</span>
+  </div>`;
+}
+
+/* ---- structure tree: interaction ------------------------------------ */
+
+function toggleTreeKey(key, index) {
+  if (state.treeExpanded.has(key)) state.treeExpanded.delete(key);
+  else state.treeExpanded.add(key);
+  state.treeFocus = index;
+  renderTreeRows();
+  focusTreeRow(index);
+}
+
+// Moves the roving tabindex. The row has to be inside the painted window
+// before it can take focus, so this scrolls first, repaints, then focuses.
+function focusTreeRow(index) {
+  if (!state.treeRows.length) return;
+  state.treeFocus = Math.max(0, Math.min(state.treeRows.length - 1, index));
+  state.treeSelected = state.treeRows[state.treeFocus].key;
+
+  const viewport = $("treeViewport");
+  if (!viewport) return;
+  const top = viewport.getBoundingClientRect().top + state.treeFocus * TREE_ROW_H;
+  if (top < 72 || top > window.innerHeight - 48) {
+    // The pane scrolls on a wide layout, the window on a narrow one.
+    const pane = document.querySelector(".panes");
+    const scroller = pane.scrollHeight > pane.clientHeight + 1 ? pane : window;
+    scroller.scrollBy(0, top - window.innerHeight / 2);
+  }
+
+  state.treeWindow = null; // the roving tabindex moved, so the slice is stale
+  paintTree();
+  const el = $("treeWindow").querySelector(`[data-trow="${state.treeFocus}"]`);
+  if (el) el.focus({ preventScroll: true });
+}
+
+// The row that contains this one: the nearest row above it at a shallower
+// depth. Used by ArrowLeft on an already-closed row.
+function parentRowIndex(rows, index) {
+  const depth = rows[index].depth;
+  for (let i = index - 1; i >= 0; i--) if (rows[i].depth < depth) return i;
+  return -1;
+}
+
+$("paneTree").addEventListener("click", (e) => {
+  const row = e.target.closest(".trow");
+  if (!row) return;
+  if (row.dataset.key) toggleTreeKey(row.dataset.key, +row.dataset.trow);
+  else focusTreeRow(+row.dataset.trow);
+});
+
+$("paneTree").addEventListener("keydown", (e) => {
+  if (!e.target.closest(".trow") || !state.treeRows.length) return;
+  const rows = state.treeRows;
+  const i = state.treeFocus;
+  const row = rows[i];
+  if (!row) return;
+
+  // A filter forces every group open, so nothing collapses while one is set.
+  const key = row.type === "group" || (row.type === "segment" && state.doc.segments[row.seg].elements.length)
+    ? row.key : null;
+  const open = row.type === "group"
+    ? !!state.treeNeedle || state.treeExpanded.has(row.key)
+    : !!key && state.treeExpanded.has(key);
+  const locked = row.type === "group" && !!state.treeNeedle;
+
+  switch (e.key) {
+    case "ArrowDown": e.preventDefault(); focusTreeRow(i + 1); break;
+    case "ArrowUp":   e.preventDefault(); focusTreeRow(i - 1); break;
+    case "Home":      e.preventDefault(); focusTreeRow(0); break;
+    case "End":       e.preventDefault(); focusTreeRow(rows.length - 1); break;
+    case "ArrowRight":
+      e.preventDefault();
+      if (key && !open && !locked) toggleTreeKey(key, i);
+      else focusTreeRow(i + 1);
+      break;
+    case "ArrowLeft": {
+      e.preventDefault();
+      if (key && open && !locked) { toggleTreeKey(key, i); break; }
+      const parent = parentRowIndex(rows, i);
+      if (parent >= 0) focusTreeRow(parent);
+      break;
+    }
+    case "Enter":
+    case " ":
+      e.preventDefault();
+      if (key && !locked) toggleTreeKey(key, i);
+      break;
+    default:
+      break;
+  }
+});
 
 /* ---- claim table ---------------------------------------------------- */
 
@@ -2909,6 +3842,13 @@ function render(result) {
   state.outline = buildOutline(state.doc.segments);
   state.claims = null;  // stale the moment the document changes; rebuilt on demand
   state.focus = null;
+  // Rebuilt against the edited document on next open. `treeExpanded` is
+  // deliberately kept: its keys are segment indices, and the rules rewrite
+  // values without adding, removing, or reordering a single segment.
+  state.tree = null;
+  state.treeRows = [];
+  state.treeWindow = null;
+  $("paneTree").innerHTML = "";
   // Validation runs eagerly, unlike the claim index: the tab badge has to be
   // right before anyone opens the tab, and this is one pass that allocates
   // only for the problems it finds.
@@ -2984,7 +3924,7 @@ function renderOutput(result) {
 }
 
 /* ---- tabs ---------------------------------------------------------- */
-const TABS = ["document", "claims", "checks", "changes", "output"];
+const TABS = ["document", "tree", "claims", "checks", "changes", "output"];
 
 function selectTab(which) {
   for (const name of TABS) {
@@ -3002,6 +3942,16 @@ function selectTab(which) {
   // are real work, and most sessions never leave the Document tab.
   if (which === "claims") renderClaims();
   if (which === "checks") renderChecks();
+  // The tree keeps its expansion and filter across tab switches, so only a
+  // pane that was emptied by a load or a run gets rebuilt from scratch.
+  if (which === "tree") {
+    if ($("treeRows")) {
+      state.treeWindow = null;
+      paintTree();
+    } else {
+      renderTree();
+    }
+  }
 }
 for (const name of TABS) {
   $("tab" + name[0].toUpperCase() + name.slice(1)).addEventListener("click", () => selectTab(name));
