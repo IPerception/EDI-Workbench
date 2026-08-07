@@ -95,5 +95,17 @@ for (const [name, match] of Object.entries(blocks)) {
   else ok(`${name} redefines all ${base.size} themed tokens`);
 }
 
+/* --- 7. the outline cannot set the document grid's height ----------- */
+// Uncapped, a 600-claim outline runs to tens of thousands of pixels and
+// becomes the taller of the two columns, so it sets the grid row height.
+// Narrowing the scope to one claim then strands a 15-row list at the top of
+// a page that is still enormous, and sticky never engages because the
+// element already fills its row. It has to cap and scroll itself.
+const outlineRule = css.match(/\.outline \{([\s\S]*?)\n  \}/);
+if (!outlineRule) bad("no .outline rule found");
+else if (!/max-height:/.test(outlineRule[1])) bad(".outline must cap its height, or it sets the doc-view row height");
+else if (!/overflow-y:\s*auto/.test(outlineRule[1])) bad(".outline caps its height but cannot scroll to its own bottom");
+else ok(".outline caps its height and scrolls itself");
+
 console.log(problems ? `\n${problems} problem(s)` : "\nclean");
 process.exit(problems ? 1 : 0);

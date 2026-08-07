@@ -466,6 +466,14 @@
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 7px;
+    /* Capped, and scrolls itself. A 600-claim file makes this list tens of
+       thousands of pixels tall; uncapped it becomes the taller of the two
+       grid columns and sets the row height. Narrowing the scope to one claim
+       then leaves a 15-row list stranded at the top of a page that is still
+       enormous -- and sticky never engages, because the element already
+       fills its own grid row. */
+    max-height: calc(100dvh - 150px);
+    overflow-y: auto;
   }
   .outline-title { padding: 4px 6px 6px; }
 
@@ -2861,10 +2869,22 @@ function renderDocument() {
         other.setAttribute("aria-pressed", String(other === btn));
       }
       renderRows();
+      showRowsFromTop();
     });
   }
 
   renderRows();
+}
+
+// Puts the row list at the top of whatever is scrolling. Changing the scope
+// should show the start of the new scope, and the outline is its own scroll
+// container, so this does not cost the reader their place in a long claim
+// list -- only the rows move.
+function showRowsFromTop() {
+  if (!$("docRows")) return;
+  $("docRows").scrollIntoView({ block: "start" });
+  state.window = null; // the list moved relative to the fold; reslice it
+  paintWindow();
 }
 
 // Brings a segment into view in the document browser. Rather than computing
@@ -2880,6 +2900,7 @@ function revealSegment(index) {
   state.scope = { start: Math.max(0, index - 12), end: Math.min(total, index + 28) };
   state.focus = index;
   renderDocument();
+  showRowsFromTop(); // a jump from Checks lands with the pane scrolled anywhere
 }
 
 function scopedIndices() {
