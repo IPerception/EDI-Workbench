@@ -34,6 +34,7 @@ const src = [
   lift("PHI_FIELDS", "const PHI_FIELDS = {") + ";",
   lift("isPhiField", "function isPhiField(seg, index)"),
   lift("maskText", "function maskText(value)"),
+  lift("HL_CLEARS", "const HL_CLEARS = {") + ";",
   lift("buildClaimIndex", "function buildClaimIndex(segments)"),
   lift("elAt", "function elAt(index, n)"),
   lift("nameAt", "function nameAt(index)"),
@@ -44,7 +45,7 @@ const src = [
   lift("CLAIM_COLUMNS", "const CLAIM_COLUMNS = [") + ";",
   lift("csvCell", "function csvCell(value)"),
   "const state = { doc: null, mask: false };",
-  "export { parse, buildClaimIndex, CLAIM_COLUMNS, csvCell, maskText, isPhiField, nameAt, procParts, posAt, diagnosesAt, date8, state };",
+  "export { parse, buildClaimIndex, HL_CLEARS, CLAIM_COLUMNS, csvCell, maskText, isPhiField, nameAt, procParts, posAt, diagnosesAt, date8, state };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -123,6 +124,72 @@ check("claim 2 has its own place of service", row(rows, 2)["Place of service"], 
 check("claim 2 has its own diagnosis", row(rows, 2).Diagnoses, "E119");
 check("claim 1 diagnoses did not leak forward", row(rows, 0).Diagnoses, "J209");
 check("claim 2 service date", row(rows, 2)["Service date"], "2023-01-05");
+m.state.doc = doc;
+
+console.log("\n[5b] a claim's last line keeps its own patient");
+// Regression. A service line is not flushed until something closes it, so a
+// claim's LAST line used to be emitted after the walk had already entered the
+// following HL loop and read its NM1*QC -- attributing the subscriber's final
+// line to the dependent who happened to come next. Spotted in a screenshot of
+// the Claims tab, where one claim showed two different patients.
+const withDependent = m.parse([
+  "ISA*00*          *00*          *ZZ*S              *ZZ*R              *230101*1200*^*00501*000000001*0*T*:",
+  "GS*HC*S*R*20230101*1200*1*X*005010X222A1",
+  "ST*837*0001*005010X222A1",
+  "HL*1**20*1",
+  "NM1*85*2*CLINIC*****XX*1234567893",
+  "HL*2*1*22*1",
+  "SBR*P*18*******CI",
+  "NM1*IL*1*SUBSCRIBER*SAM****MI*S1",
+  // Two lines. The second is the one that used to be misattributed.
+  "CLM*SUBCLAIM*200***11:B:1*Y*A*Y*Y",
+  "LX*1", "SV1*HC:99213*100*UN*1***1", "DTP*472*D8*20230105",
+  "LX*2", "SV1*HC:99214*100*UN*1***2", "DTP*472*D8*20230112",
+  // A dependent follows, with its own claim.
+  "HL*3*2*23*0",
+  "PAT*19",
+  "NM1*QC*1*DEPENDENT*DANA",
+  "CLM*DEPCLAIM*50***11:B:1*Y*A*Y*Y",
+  "LX*1", "SV1*HC:99391*50*UN*1***1", "DTP*472*D8*20230305",
+  "SE*21*0001", "GE*1*1", "IEA*1*000000001",
+].join("~") + "~");
+m.state.doc = withDependent;
+const dep = m.buildClaimIndex(withDependent.segments);
+check("three rows", dep.length, 3);
+check("both of the subscriber's lines name the subscriber",
+  dep.slice(0, 2).map((r) => m.nameAt(r.patient)),
+  ["SUBSCRIBER, SAM", "SUBSCRIBER, SAM"]);
+check("only the dependent's claim names the dependent",
+  m.nameAt(dep[2].patient), "DEPENDENT, DANA");
+check("and the subscriber column is the subscriber throughout",
+  dep.map((r) => m.nameAt(r.subscriber)),
+  ["SUBSCRIBER, SAM", "SUBSCRIBER, SAM", "SUBSCRIBER, SAM"]);
+
+console.log("\n[5c] entity context does not carry past its scope");
+// 2310B/2420A live inside the claim, so a claim that omits a rendering
+// provider must not inherit the previous claim's.
+const renderLeak = m.parse([
+  "ISA*00*          *00*          *ZZ*S              *ZZ*R              *230101*1200*^*00501*000000001*0*T*:",
+  "GS*HC*S*R*20230101*1200*1*X*005010X222A1",
+  "ST*837*0001*005010X222A1",
+  "HL*1**20*1", "NM1*85*2*CLINIC*****XX*1234567893",
+  "HL*2*1*22*0", "SBR*P*18*******CI", "NM1*IL*1*SUBSCRIBER*SAM****MI*S1",
+  "CLM*HASRENDER*100***11:B:1*Y*A*Y*Y",
+  "NM1*82*1*RENDER*RITA****XX*1122334455",
+  "LX*1", "SV1*HC:99213*100*UN*1***1", "DTP*472*D8*20230105",
+  "CLM*NORENDER*100***11:B:1*Y*A*Y*Y",
+  "LX*1", "SV1*HC:99213*100*UN*1***1", "DTP*472*D8*20230106",
+  "SE*18*0001", "GE*1*1", "IEA*1*000000001",
+].join("~") + "~");
+m.state.doc = renderLeak;
+const leak = m.buildClaimIndex(renderLeak.segments);
+check("the claim that names a rendering provider has one",
+  m.nameAt(leak[0].rendering), "RENDER, RITA");
+check("the claim that does not, does not", leak[1].rendering, -1);
+// A new subscriber must not inherit the previous one's dependent either.
+check("HL levels clear everything at or below them",
+  [m.HL_CLEARS["22"].includes("patient"), m.HL_CLEARS["23"].includes("subscriber")],
+  [true, false]);
 m.state.doc = doc;
 
 console.log("\n[6] PHI masking");

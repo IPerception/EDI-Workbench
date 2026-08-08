@@ -3,6 +3,10 @@
 **Browser workbench for healthcare EDI: read any X12 file, and turn real ones into safe
 test data. Nothing leaves your machine.**
 
+![The Document tab: an 837 interchange decoded one segment per row, each with its name
+and value, an outline on the left for jumping between claims and service lines, and the
+rule panel in the rail.](docs/images/document-tab.png)
+
 Open `web/EDIWorkbench.html` in a browser. That is the whole install — no server, no
 build step, no npm, no network access at any point.
 
@@ -40,6 +44,20 @@ is a browser app and not a service.
 - **Mask** — hides names, addresses, dates of birth and member IDs on screen, for
   screen-sharing a real file. Display only; the file you download is untouched.
 
+![The Tree tab, showing an interchange's loops nested inside one another with their 837P
+loop ids in a fixed column — 2010BA subscriber, 2300 claim, 2310A-C provider loops, 2400
+service line — and a diagnosis composite expanded into its parts.](docs/images/tree-tab.png)
+
+*The Tree tab. Loop ids are resolved from position, not from the segment alone: the same
+`NM1*82` is 2310B under a claim and 2420A under a service line.*
+
+![The Claims tab, showing two claims across three service lines as a table: claim number,
+patient, line, service date, procedure, units, charge, diagnoses, place of service,
+billing provider and payer.](docs/images/claims-tab.png)
+
+*The Claims tab, one row per service line. The subscriber's claim has two lines; the
+dependent's has one.*
+
 ### Changing
 
 - **Service date shift** — moves `DTP*472` dates inside service lines by a set number of
@@ -54,6 +72,14 @@ is a browser app and not a service.
 Every change is previewed before anything is written: changed segments are marked in the
 document and shown before and after. Output is byte-faithful — whitespace, delimiters and
 untouched segments come back exactly as they went in.
+
+![The Changes tab after a Limited Data Set run, showing before-and-after pairs for each
+rewritten segment: a subscriber name and member id, a street address, a date of birth, a
+social security number, a phone and email, and a patient account number.](docs/images/limited-data-set.png)
+
+*Reviewing a Limited Data Set run before downloading. Replacements keep each value's
+shape — a nine-digit SSN stays nine digits, and an account number keeps its letter and
+digit pattern — so the result still exercises whatever validates the file downstream.*
 
 > **A Limited Data Set is not de-identified data under HIPAA.** It removes the direct
 > identifiers (45 CFR 164.514(e)) but the output remains PHI and still requires a data

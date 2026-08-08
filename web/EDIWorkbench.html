@@ -4146,6 +4146,20 @@ function maskText(value) {
 // values. A 30,000-claim file then costs an index of small integers instead
 // of a second copy of the document -- the same reasoning that keeps the
 // document list virtualized.
+// What a new hierarchical level invalidates, keyed by HL-03. An HL opens a
+// node in the hierarchy, so everything at or below that node's level stops
+// applying: a new subscriber (22) means the patient, payer and rendering
+// provider under the old one are gone, while the billing provider above it
+// still stands. An unrecognised level clears only the most local entries,
+// which is the conservative choice -- stale context attributes a claim to
+// the wrong person, and that is worse than losing a column.
+const HL_CLEARS = {
+  "20": ["billing", "subscriber", "patient", "payer", "rendering"],
+  "21": ["subscriber", "patient", "payer", "rendering"],
+  "22": ["subscriber", "patient", "payer", "rendering"],
+  "23": ["patient", "rendering"],
+};
+
 function buildClaimIndex(segments) {
   const rows = [];
   const ctx = { billing: -1, subscriber: -1, patient: -1, payer: -1, rendering: -1 };
@@ -4180,8 +4194,21 @@ function buildClaimIndex(segments) {
         else if (q === "82") ctx.rendering = i;
         break;
       }
+      // A new hierarchical level closes whatever claim is open, and it has to
+      // do that BEFORE this loop's own NM1 segments land in ctx. A claim's
+      // last service line is not flushed until something closes the claim, so
+      // without this it was emitted after the next loop's NM1*QC had already
+      // overwritten the patient -- attributing the subscriber's final line to
+      // the dependent who happened to follow it.
+      case "HL":
+        closeClaim();
+        for (const key of HL_CLEARS[seg.elements[2]] || HL_CLEARS["23"]) ctx[key] = -1;
+        break;
       case "CLM":
         closeClaim();
+        // 2310B and 2420A sit inside the claim, so a rendering provider must
+        // never carry from one claim into the next one that omits it.
+        ctx.rendering = -1;
         clm = i; claimNo++;
         break;
       case "HI":
