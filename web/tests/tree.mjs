@@ -12,13 +12,13 @@ import { APP, FIXTURE } from "./paths.mjs";
 const html = readFileSync(APP, "utf8");
 
 // Lift a top-level function or brace-delimited const by brace matching.
-function lift(name, opener) {
+function lift(name, opener, open = "{", close = "}") {
   const at = html.indexOf(opener);
   if (at === -1) throw new Error("not found: " + name);
-  let depth = 0, i = html.indexOf("{", at);
+  let depth = 0, i = html.indexOf(open, at);
   for (; i < html.length; i++) {
-    if (html[i] === "{") depth++;
-    else if (html[i] === "}") { depth--; if (depth === 0) return html.slice(at, i + 1); }
+    if (html[i] === open) depth++;
+    else if (html[i] === close) { depth--; if (depth === 0) return html.slice(at, i + 1); }
   }
   throw new Error("unbalanced: " + name);
 }
@@ -59,7 +59,11 @@ const src = [
   lift("treeMatches", "function treeMatches(root, segments, needle)"),
   lift("flattenTree", "function flattenTree(root, opts)"),
   lift("loopTint", "function loopTint(loop)"),
-  "export { buildTree, defaultExpanded, allGroupKeys, treeMatches, flattenTree, loopTint, parse, ROW_H, HL_RANK, HL_RANK_MAX, GROUP_RANK };",
+  lift("STRUCTURAL_LOOPS", "const STRUCTURAL_LOOPS = [", "[", "]") + ";",
+  lift("LOOP_CONTEXTS", "const LOOP_CONTEXTS = [", "[", "]") + ";",
+  lift("contextLabel", "function contextLabel(key)"),
+  lift("referenceLoops", "function referenceLoops()"),
+  "export { buildTree, defaultExpanded, allGroupKeys, treeMatches, flattenTree, loopTint, parse, referenceLoops, contextLabel, LOOP_CONTEXTS, ROW_H, HL_RANK, HL_RANK_MAX, GROUP_RANK };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -398,7 +402,39 @@ check("every loop the samples produce is banded",
   [...everyLoop].filter((l) => !m.loopTint(l)), []);
 check("and there are enough of them for that to mean something", everyLoop.size >= 19, true);
 
-console.log("\n[18] the row height the virtual list depends on");
+console.log("\n[18] the guide's loop reference is generated, not written");
+// The point of generating it: the guide cannot claim a loop the tree doesn't
+// resolve, and cannot omit one it does. If this fails, the reference has
+// drifted from the app -- which is the exact failure generating it prevents.
+const refGroups = m.referenceLoops();
+const listed = new Set(refGroups.flatMap(([, rows]) => rows.map((r) => r.loop)));
+check("every loop the samples produce is in the reference",
+  [...everyLoop].filter((l) => !listed.has(l)), []);
+check("the reference lists no loop twice",
+  refGroups.flatMap(([, rows]) => rows.map((r) => r.loop)).length, listed.size);
+const known = new Set(m.LOOP_CONTEXTS.map(([key]) => key));
+check("every group has a context heading",
+  refGroups.map(([parent]) => parent).filter((p) => !known.has(p)), []);
+// Pinned because it silently broke once: LOOP_CONTEXTS used to be an object,
+// and `Object.keys` hoists integer-like keys ahead of the rest in ascending
+// numeric order, so "2300"/"2320"/"2400" sorted above "ST" and "2000A" and
+// the reference opened on the claim loops instead of the envelope.
+check("sections run in the order a file presents them",
+  refGroups.map(([parent]) => parent),
+  ["ST", "2000A", "2000B", "2000C", "2300", "2320", "2400"]);
+check("the context label falls back to the raw key when unknown",
+  m.contextLabel("9999"), "9999");
+check("every row names the segment that opens it",
+  refGroups.flatMap(([, rows]) => rows).filter((r) => !r.opener || !r.name).length, 0);
+// The claim and service line are opened by CLM and LX directly, so they are
+// in no qualifier table and have to be added by hand -- the one place the
+// reference isn't purely derived, and the easiest thing to lose.
+check("the claim and service line loops are present",
+  ["2300", "2400"].filter((l) => !listed.has(l)), []);
+check("the reference covers more than the samples happen to reach",
+  listed.size > everyLoop.size, true);
+
+console.log("\n[19] the row height the virtual list depends on");
 check("ROW_H is the fixed height every tree row is drawn at", m.ROW_H, 24);
 check("HL ranks sit between the transaction and the claim",
   m.HL_RANK > m.GROUP_RANK.ST && m.HL_RANK_MAX < m.GROUP_RANK.CLM, true);

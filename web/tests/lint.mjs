@@ -46,16 +46,16 @@ else ok("markup nests correctly, all attributes quoted");
 const defined = new Set();
 const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
 for (const c of css.matchAll(/\.([a-zA-Z][\w-]*)/g)) defined.add(c[1]);
-// classes applied at runtime from the script
-for (const c of script.matchAll(/class="([^"]+)"/g)) c[1].split(/\s+/).forEach((x) => x && defined.has(x));
 const used = new Set();
 const IDENT = /^[a-zA-Z][\w-]*$/; // skips ${...} fragments in template literals
+// Scans the whole file, not just the markup: classes inside the script's
+// template literals are markup too, and they reach the page the same way.
 for (const attr of html.matchAll(/class="([^"]*)"/g)) {
   for (const c of attr[1].split(/\s+/)) if (IDENT.test(c)) used.add(c);
 }
 for (const c of script.matchAll(/classList\.(?:add|toggle|remove)\("([^"]+)"/g)) used.add(c[1]);
 // Classes built by string concatenation, which the scan above can't see.
-["touched-shift", "touched-swap", "depth-0", "depth-1", "depth-2",
+["touched-shift", "touched-swap", "touched-deid", "depth-0", "depth-1", "depth-2",
  "trow", "tgroup", "tseg", "tel", "tsub", "open-able", "alt", "sel",
  "tguide", "on", "tcar", "open", "shut", "leaf", "last",
  "lp-head", "lp-hier", "lp-claim", "lp-line"].forEach((c) => used.add(c));
@@ -106,6 +106,24 @@ if (!outlineRule) bad("no .outline rule found");
 else if (!/max-height:/.test(outlineRule[1])) bad(".outline must cap its height, or it sets the doc-view row height");
 else if (!/overflow-y:\s*auto/.test(outlineRule[1])) bad(".outline caps its height but cannot scroll to its own bottom");
 else ok(".outline caps its height and scrolls itself");
+
+/* --- 8. the rail masthead stays pinned ------------------------------ */
+// The mask and theme toggles act on whatever is on screen at the time, so
+// they have to be reachable at any scroll position. They were inside the
+// scroll container until the rail was split, and reaching the mask button
+// meant scrolling the rules back up first. Two invariants keep that fixed:
+// the masthead sits outside .rail-body, and .rail-body is what scrolls.
+const railBody = markup.slice(markup.indexOf('class="rail-body"'), markup.indexOf("</aside>"));
+if (markup.indexOf('class="rail-body"') === -1) bad("no .rail-body found: the rail no longer splits head from body");
+else if (railBody.includes('class="masthead"')) bad("the masthead is inside .rail-body, so it scrolls out of reach");
+else if (!markup.includes('class="rail-head"')) bad("no .rail-head wrapper around the masthead");
+else ok("the masthead sits outside the rail's scroll container");
+
+const railBodyRule = css.match(/\.rail-body \{([\s\S]*?)\n  \}/);
+if (!railBodyRule) bad("no .rail-body rule found");
+else if (!/overflow-y:\s*auto/.test(railBodyRule[1])) bad(".rail-body must scroll, or the rail overflows the viewport");
+else if (!/min-height:\s*0/.test(railBodyRule[1])) bad(".rail-body needs min-height: 0, or a grid row refuses to shrink and it never scrolls");
+else ok(".rail-body scrolls and can shrink to do it");
 
 console.log(problems ? `\n${problems} problem(s)` : "\nclean");
 process.exit(problems ? 1 : 0);

@@ -15,6 +15,7 @@ Regenerate either set at any time — both are deterministic:
 ```
 node web/tests/make_samples.mjs        # -> checks/
 node web/tests/make_tree_samples.mjs   # -> tree/
+node web/tests/make_deid_samples.mjs   # -> deid/
 ```
 
 The clean baseline is `tests/fixtures/sample_837p.edi`, which should report no
@@ -52,3 +53,22 @@ doesn't have.
 `large.edi` is ~200 KB, by far the biggest file here. If that becomes
 unwelcome in the repo it is the one to drop; the generator rebuilds it in
 well under a second.
+
+## `deid/` — for the Limited Data Set button
+
+All four validate cleanly both before and after a Limited Data Set run, which
+`deid.mjs` asserts — so anything the Checks tab reports while looking at these
+is a real regression, not a side effect of the run.
+
+| File | What it exercises |
+| --- | --- |
+| `repeat_patient.edi` | One member across four claims — the consistency property. After a run all four must still name one person, with one fake name **and** one fake member id, while the four account numbers stay four distinct values |
+| `patient_and_cob.edi` | Three people in one transaction: subscriber, their child as the 2000C patient, and the subscriber again in the 2330A COB block. The two subscriber entries must match each other and differ from the patient's |
+| `no_patient_loops.edi` | Only a provider and a pay-to address — the run must report no changes rather than inventing any |
+| `awkward_values.edi` | A subscriber with no member id (keyed on name + date of birth instead), an `RD8` date range, and an impossible date (month 13) that must be skipped rather than failing the file |
+
+All four have a billing provider named `WHITFIELD, ANNA`, and the two with
+several claims — `repeat_patient.edi` and `patient_and_cob.edi` — also carry
+`NM1*DN` and `NM1*82` inside them. Every one of those is a natural person and
+every one must come out byte-identical: that is the check a name-shape
+heuristic fails and loop-based targeting passes.

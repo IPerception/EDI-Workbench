@@ -14,6 +14,7 @@ const SUITES = [
   ["tree", "structure tree building and row flattening"],
   ["claims", "claim/service-line index, PHI masking, CSV export"],
   ["validate", "control counts, claim balance, and count repair"],
+  ["deid", "patient de-identification, consistency, and date shifting"],
   ["virtual", "virtual list windowing arithmetic"],
   ["lint", "single-file self-containment and markup"],
 ];

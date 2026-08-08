@@ -24,6 +24,7 @@ const src = [
   lift("COMPOSITES", "const COMPOSITES = {") + ";",
   lift("compositeSpec", "function compositeSpec(segId, index)"),
   lift("buildOutline", "function buildOutline(segments)"),
+  lift("claimStarts", "function claimStarts(outline)"),
   lift("segmentRole", "function segmentRole(seg)"),
   lift("splitN", "function splitN(text, sep, maxsplit)"),
   lift("detectDelimiters", "function detectDelimiters(raw)"),
@@ -36,7 +37,7 @@ const src = [
   // componentHtml reads the live document off `state`; the app builds that
   // at load time, so the harness supplies one it can point at a fixture.
   "const state = { doc: null };",
-  "export { buildOutline, segmentRole, parse, SEGMENT_NAMES, COMPOSITES, compositeSpec, componentHtml, versionLabel, state };",
+  "export { buildOutline, claimStarts, segmentRole, parse, SEGMENT_NAMES, COMPOSITES, compositeSpec, componentHtml, versionLabel, state };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -148,7 +149,23 @@ check("a needle spanning components falls back to whole-value matching",
 check("empty trailing component renders",
   m.componentHtml("ABK:", ""), 'ABK<span class="csep">:</span>');
 
-console.log("\n[8] version label");
+console.log("\n[8] claim separators in the outline");
+// Purely presentational, but the one rule that is easy to get wrong: the
+// first claim under a transaction heading must NOT get a rule above it, or
+// the line reads as cutting the claim off from its own transaction.
+const depths = (list) => m.claimStarts(list.map((d) => ({ depth: d })));
+check("the sample's only claim is left bare", [...m.claimStarts(outline)], []);
+check("second and third claims are separated, the first is not",
+  [...depths([0, 1, 2, 2, 1, 2, 1])], [4, 6]);
+check("service lines are never separated",
+  [...depths([0, 1, 2, 2, 2, 2])], []);
+check("the rule resets at each transaction",
+  [...depths([0, 1, 1, 0, 1, 1])], [2, 5]);
+check("a transaction with one claim each gets no separators at all",
+  [...depths([0, 1, 0, 1, 0, 1])], []);
+check("an empty outline is not a special case", [...m.claimStarts([])], []);
+
+console.log("\n[9] version label");
 check("5010 code", m.versionLabel("00501"), "5010");
 check("4010 code", m.versionLabel("00401"), "4010");
 check("unrecognised code shown raw", m.versionLabel("00301"), "00301");

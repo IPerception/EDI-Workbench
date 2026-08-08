@@ -12,8 +12,13 @@ venv/
 web/tests/ref/
 web/tests/_check.js
 
-# Processed EDI output — may contain PHI, must never be committed
+# Processed EDI output — may contain PHI, must never be committed.
+# De-identified output is listed too: the run only rewrites the loops it
+# recognises, so a file whose patient data sits somewhere unexpected comes out
+# named "deidentified" while still carrying it.
 *_processed_*.edi
+*_lds_*.edi
+*_deidentified_*.edi
 
 # OS
 Thumbs.db

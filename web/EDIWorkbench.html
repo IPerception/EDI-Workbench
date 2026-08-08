@@ -17,6 +17,8 @@
     --shift-wash:#ebe4ff;
     --swap:      #8f6210;
     --swap-wash: #fbeed4;
+    --deid:      #1f7a4d;
+    --deid-wash: #dcf2e5;
     --danger:    #b3261e;
     --danger-wash:#fbe4e2;
     --shadow:    0 1px 2px rgba(16, 22, 28, .06), 0 8px 24px -16px rgba(16, 22, 28, .25);
@@ -48,6 +50,8 @@
       --shift-wash:#241a44;
       --swap:      #e0a94b;
       --swap-wash: #33260e;
+      --deid:      #4fc78a;
+      --deid-wash: #102c1f;
       --danger:    #ff8a80;
       --danger-wash:#3a1613;
       --shadow:    0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
@@ -70,6 +74,8 @@
     --shift-wash:#241a44;
     --swap:      #e0a94b;
     --swap-wash: #33260e;
+    --deid:      #4fc78a;
+    --deid-wash: #102c1f;
     --danger:    #ff8a80;
     --danger-wash:#3a1613;
     --shadow:    0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
@@ -91,6 +97,8 @@
     --shift-wash:#ebe4ff;
     --swap:      #8f6210;
     --swap-wash: #fbeed4;
+    --deid:      #1f7a4d;
+    --deid-wash: #dcf2e5;
     --danger:    #b3261e;
     --danger-wash:#fbe4e2;
     --shadow:    0 1px 2px rgba(16, 22, 28, .06), 0 8px 24px -16px rgba(16, 22, 28, .25);
@@ -130,13 +138,30 @@
     height: 100dvh;
   }
 
+  /* Two rows, and only the second one scrolls. The masthead carries the mask
+     and theme toggles, which apply to whatever is on screen at the time --
+     having them scroll away with the rules meant reaching for the mask button
+     required scrolling back up first. `minmax(0, 1fr)` rather than `1fr` so
+     the body can actually shrink below its content height and scroll. */
   .rail {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+  }
+
+  .rail-head {
+    padding: 22px 20px 16px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .rail-body {
     display: flex;
     flex-direction: column;
     gap: 20px;
-    padding: 22px 20px 20px;
-    background: var(--panel);
-    border-right: 1px solid var(--line);
+    min-height: 0;
+    padding: 20px;
     overflow-y: auto;
   }
 
@@ -217,6 +242,7 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .dot.shift { background: var(--shift); }
   .dot.swap  { background: var(--swap); }
+  .dot.deid  { background: var(--deid); }
 
   /* ---- switch ------------------------------------------------------- */
   .switch { position: relative; flex: none; width: 34px; height: 19px; }
@@ -271,6 +297,17 @@
   .check input { accent-color: var(--signal); width: 14px; height: 14px; margin: 0; }
 
   .hint { margin: 0; font-size: var(--step--1); color: var(--slate); line-height: 1.45; }
+  /* The one thing in this card someone must not skim past: the output is
+     still PHI. Given its own weight rather than left as a fourth grey
+     paragraph, which is where it was invisible. */
+  .hint.caution {
+    color: var(--ink-2);
+    background: var(--danger-wash);
+    border-left: 2px solid var(--danger);
+    border-radius: 0 5px 5px 0;
+    padding: 8px 10px;
+  }
+  .hint.caution b { color: var(--danger); }
   .hint code { font-family: var(--mono); color: var(--ink-2); }
 
   /* ---- drop zone ---------------------------------------------------- */
@@ -345,6 +382,10 @@
   :root[data-theme="dark"] .btn.primary { color: #06181a; }
   :root[data-theme="light"] .btn.primary { color: #fff; }
   .btn.primary:hover:not(:disabled) { background: var(--signal-2); border-color: var(--signal-2); color: var(--panel); }
+  /* Distinct from Run rules on purpose: it is a different action with a
+     different output, not another rule that happens to be switched on. */
+  .btn.deid:hover:not(:disabled) { border-color: var(--deid); color: var(--deid); }
+  .btn.deid svg { color: var(--deid); }
   .btn.link {
     padding: 0; border: 0; background: none;
     font-size: var(--step--1); font-weight: 500;
@@ -430,6 +471,77 @@
   .guide-body dt { font-family: var(--mono); font-size: var(--step--1); color: var(--ink); font-weight: 600; }
   .guide-body dd { margin: 2px 0 0; color: var(--slate); font-size: var(--step--1); line-height: 1.5; }
   .guide-body code { font-family: var(--mono); color: var(--ink-2); }
+  /* The guide covers two different jobs -- reading a file, and making test
+     data out of one -- plus a reference and a privacy note. At seven sections
+     that stopped being self-evident from the h3s alone, so each part gets a
+     labelled rule above it. */
+  .guide-part {
+    margin: 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-2);
+  }
+
+  /* ---- 837 reference ---- */
+  .ref h4.ref-h {
+    margin: 18px 0 4px;
+    font-size: var(--step-0);
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .ref .ref-note { margin: 0 0 10px; color: var(--slate); font-size: var(--step--1); }
+  /* Two columns where there is room, one below it. The tables are short and
+     tall, so a single column wastes most of a wide dialog. */
+  #refLoops, #refQualifiers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+  .ref-group {
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--panel-2);
+  }
+  .ref-context {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .ref-in { font-weight: 400; color: var(--slate); }
+  .ref-table { width: 100%; border-collapse: collapse; }
+  .ref-table td {
+    padding: 3px 0;
+    font-size: var(--step--1);
+    vertical-align: baseline;
+  }
+  .ref-table tr + tr td { border-top: 1px solid var(--line-soft); }
+  .ref-loop {
+    font-family: var(--mono);
+    color: var(--signal);
+    white-space: nowrap;
+    padding-right: 10px !important;
+    width: 1%;
+  }
+  .ref-open { white-space: nowrap; padding-right: 10px !important; width: 1%; }
+  .ref-open code { font-size: var(--step--1); color: var(--ink-2); }
+  .ref-name { color: var(--ink-2); }
+  /* The segment glossary is one long list rather than a set of cards, so it
+     gets columns of its own instead of the grid the card sections use. */
+  #refSegments .ref-table {
+    column-count: 2;
+    column-gap: 22px;
+    display: block;
+  }
+  #refSegments tbody { display: block; }
+  #refSegments tr { display: flex; gap: 10px; break-inside: avoid; }
+  #refSegments td { border-top: 0 !important; }
+  #refSegments .ref-loop { width: 42px; flex: none; }
+  @media (max-width: 640px) {
+    #refSegments .ref-table { column-count: 1; }
+  }
 
   .steps { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
   .steps li {
@@ -505,6 +617,18 @@
   .onode.depth-0 { padding-left: 8px; font-weight: 600; color: var(--ink); }
   .onode.depth-1 { padding-left: 20px; }
   .onode.depth-2 { padding-left: 34px; }
+  /* A claim and its service lines read as one block, which they stop doing
+     once a transaction has more than a couple of claims. The rule goes above
+     each claim except the first in its transaction -- a line under the
+     transaction heading would be separating a claim from its own parent. The
+     inset keeps it clear of the heading's text, so it reads as a divider
+     between siblings rather than a border on the group. */
+  .onode.depth-1.claim-start {
+    margin-top: 5px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line-soft);
+    border-radius: 0 0 5px 5px;
+  }
   .onode .flag {
     flex: none;
     width: 6px; height: 6px;
@@ -559,6 +683,7 @@
   .row:hover { background: var(--signal-wash); border-left-color: var(--slate); }
   .row.touched-shift { border-left-color: var(--shift); }
   .row.touched-swap  { border-left-color: var(--swap); }
+  .row.touched-deid  { border-left-color: var(--deid); }
   .row.envelope .row-id { color: var(--slate); }
   /* The segment a finding pointed at, so it is identifiable once the jump
      lands and the surrounding rows all look alike. */
@@ -670,6 +795,7 @@
   .trow:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
   .trow.touched-shift { border-left-color: var(--shift); }
   .trow.touched-swap  { border-left-color: var(--swap); }
+  .trow.touched-deid  { border-left-color: var(--deid); }
   .tgroup, .tseg.open-able { cursor: pointer; }
   .tgroup .tlabel { color: var(--ink); font-weight: 600; }
 
@@ -1047,6 +1173,8 @@
   .tile.is-shift b { color: var(--shift); }
   .tile.is-swap { border-left-color: var(--swap); }
   .tile.is-swap b { color: var(--swap); }
+  .tile.is-deid { border-left-color: var(--deid); }
+  .tile.is-deid b { color: var(--deid); }
   .tile.is-total { border-left-color: var(--signal); }
   .tile.is-total b { color: var(--signal); }
 
@@ -1109,6 +1237,7 @@
   }
   .chip.shift { background: var(--shift-wash); color: var(--shift); }
   .chip.swap  { background: var(--swap-wash);  color: var(--swap); }
+  .chip.deid  { background: var(--deid-wash);  color: var(--deid); }
 
   .line {
     display: flex; flex-wrap: wrap; align-items: baseline;
@@ -1195,7 +1324,11 @@
 
   @media (max-width: 900px) {
     .shell { grid-template-columns: 1fr; height: auto; }
-    .rail { border-right: 0; border-bottom: 1px solid var(--line); overflow-y: visible; }
+    /* Stacked, the page itself is the scroll container, so the rail goes back
+       to one flowing column -- a pinned header inside a column that no longer
+       scrolls on its own would just eat vertical space. */
+    .rail { display: block; border-right: 0; border-bottom: 1px solid var(--line); }
+    .rail-body { overflow-y: visible; }
     .stage { overflow: visible; }
     .panes { overflow-y: visible; }
     .empty { height: auto; padding: 32px 24px; }
@@ -1206,6 +1339,8 @@
 <div class="shell">
   <!-- ============ control rail ============ -->
   <aside class="rail">
+    <!-- pinned: everything below this scrolls, this does not -->
+    <div class="rail-head">
     <div class="masthead">
       <div>
         <h1 class="wordmark">EDI<span class="sep">*</span>WORKBENCH</h1>
@@ -1224,7 +1359,9 @@
         </svg>
       </button>
     </div>
+    </div>
 
+    <div class="rail-body">
     <!-- file -->
     <section class="block">
       <span class="label">Source file</span>
@@ -1313,6 +1450,29 @@
       </div>
     </section>
 
+    <!-- limited data set: its own action, not a third rule -->
+    <section class="block">
+      <div class="block-head">
+        <span class="label">Limited Data Set</span>
+      </div>
+      <div class="card" id="deidCard">
+        <div class="card-head">
+          <span class="card-title"><i class="dot deid"></i>Strip patient identifiers</span>
+        </div>
+        <p class="hint">Replaces patient and subscriber names, member ids, addresses, contact details, social security and medical record numbers, and patient account numbers with consistent stand-ins. The same person keeps the same fake identity everywhere in the file, so claims still match up.</p>
+        <p class="hint">Dates are shifted per patient rather than removed, and city, state and ZIP are kept &mdash; that is what a <b>HIPAA Limited Data Set</b> permits, and it is what keeps the file usable as test data. Providers are left real: an NPI is not patient information.</p>
+        <p class="hint caution"><b>The result is still PHI.</b> A Limited Data Set is not de-identified data under HIPAA &mdash; it stays protected, and sharing it still needs a data use agreement. Only Safe Harbor or an expert determination produces data that leaves HIPAA behind, and neither is what this does.</p>
+        <p class="hint">The mapping is random for every run and is never saved, so this is one-way &mdash; the output cannot be turned back into the original.</p>
+        <button class="btn deid" id="deidBtn" type="button" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3 4 6v6c0 4.5 3.2 8.4 8 9 4.8-.6 8-4.5 8-9V6l-8-3Z" />
+            <path d="M9 12h6" />
+          </svg>
+          Create Limited Data Set
+        </button>
+      </div>
+    </section>
+
     <div class="rail-actions">
       <button class="btn primary" id="runBtn" type="button" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1326,6 +1486,7 @@
         </svg>
         Your file is read in the browser and never uploaded. Close the tab and nothing is left behind.
       </p>
+    </div>
     </div>
   </aside>
 
@@ -1394,8 +1555,8 @@
 <dialog class="guide" id="guideDialog" aria-labelledby="guideTitle">
   <div class="guide-head">
     <div>
-      <h2 id="guideTitle">Edit an 837 without opening a text editor.</h2>
-      <p>Load an interchange, pick the changes you want, and get a byte-faithful copy back &mdash; whitespace, delimiters, and every segment you didn't touch preserved exactly as they came in.</p>
+      <h2 id="guideTitle">Read an 837, or turn one into test data.</h2>
+      <p>Load an interchange and it is decoded, indexed and checked in this tab. Change it and you get a byte-faithful copy back &mdash; whitespace, delimiters, and every segment you didn't touch preserved exactly as they came in.</p>
     </div>
     <button class="guide-close" id="guideClose" type="button" aria-label="Close the guide">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
@@ -1407,26 +1568,19 @@
   <div class="guide-body">
     <ol class="steps">
       <li><span class="n">01</span><span><b>Load</b><span>Delimiters are read from the ISA header, not assumed &mdash; a file using <code>|</code> and <code>\n</code> parses just as well as <code>*</code> and <code>~</code>.</span></span></li>
-      <li><span class="n">02</span><span><b>Browse</b><span>Segments are decoded and grouped by transaction, claim, and service line. Use the outline to jump, or the filter to narrow by segment ID or value.</span></span></li>
-      <li><span class="n">03</span><span><b>Configure and run</b><span>Shift service dates, swap a string, or both. Rules run in order, top to bottom.</span></span></li>
+      <li><span class="n">02</span><span><b>Read</b><span>Four views of the same interchange: the segments themselves, the structure they imply, one row per service line, and anything malformed.</span></span></li>
+      <li><span class="n">03</span><span><b>Change it, if you need to</b><span>Shift service dates, swap a string, or both. Rules run in order, top to bottom. Creating a Limited Data Set is its own action, below them.</span></span></li>
       <li><span class="n">04</span><span><b>Review, then download</b><span>Changed segments are marked in the document and shown before and after under Changes. Nothing is written until you ask for it.</span></span></li>
     </ol>
 
-    <section>
-      <h3>What the rules do</h3>
-      <dl>
-        <dt>Service date shift</dt>
-        <dd>Moves every <code>DTP*472</code> date that sits inside a service line (loop 2400) &mdash; the ones opened by <code>LX</code> and closed by <code>CLM</code>, <code>HL</code>, or <code>SE</code>. Claim-level dates are left alone. Negative values shift backwards. Impossible dates are skipped rather than failing the file.</dd>
-        <dt>Find &amp; replace</dt>
-        <dd>Rewrites element values only. Segment IDs are never touched, and neither is the fixed-width <code>ISA</code> header &mdash; changing a value's length there breaks the interchange for the receiver. Scope it to specific segments to keep a common string from being rewritten everywhere.</dd>
-        <dd><b>Anywhere</b> matches a substring of any element. <b>Whole element</b> matches only when the entire element is the search text. <b>Whole component</b> splits composites first, so in <code>SV1*HC:99213:25</code> it can match <code>99213</code> on its own &mdash; whole element cannot, because there the element is <code>HC:99213:25</code>.</dd>
-      </dl>
-    </section>
+    <p class="label guide-part">Reading a file</p>
 
     <section>
-      <h3>Reading a production file</h3>
+      <h3>The four views</h3>
+      <p>The <b>Document</b> tab is the interchange as it is: one row per segment, decoded, with an outline on the left to jump by transaction, claim or service line, and a filter that narrows by segment ID or value. Selecting a row opens the element inspector, which names every element, decodes its qualifiers, and splits composites into their parts.</p>
+      <p>The <b>Tree</b> tab shows the nesting the segments imply rather than their order on disk &mdash; the envelope, the <code>HL</code> hierarchy resolved through its parent pointers, then claims and service lines &mdash; with every group labelled by its 837P loop id. <b>Anatomy of an 837</b> below is a reference for what those ids mean.</p>
       <p>The <b>Claims</b> tab flattens the interchange into one row per service line &mdash; patient, date, procedure, modifiers, units, charge, diagnoses, payer &mdash; which is closer to how a claim is actually read than a list of segments is. <b>Export CSV</b> writes every row, not just the ones on screen.</p>
-      <p>The eye button in the header hides names, addresses, dates of birth, member IDs and social security numbers wherever they appear, so a real file can be browsed or screen-shared without putting identifiers in front of the room. It is a display setting only: the file you download always carries the real values, and a CSV exported while masking is on is named <code>_masked</code> to record which one you have.</p>
+      <p>The <b>Checks</b> tab reports what is structurally wrong with the file rather than what is in it, and carries a badge with the count so a clean file says so without being opened.</p>
     </section>
 
     <section>
@@ -1442,13 +1596,71 @@
     </section>
 
     <section>
-      <h3>Two things it refuses to do</h3>
-      <p>Replacement text containing this file's element separator or segment terminator is rejected instead of written, because it would split the segment it landed in. The component separator is allowed, since it is legal inside an element value.</p>
+      <h3>Hiding identifiers on screen</h3>
+      <p>The eye button in the header hides names, addresses, dates of birth, member IDs and social security numbers wherever they appear, so a real file can be browsed or screen-shared without putting identifiers in front of the room. It is a display setting only: the file you download always carries the real values, and a CSV exported while masking is on is named <code>_masked</code> to record which one you have. To change the file itself rather than the view, use <b>Limited Data Set</b> below.</p>
+    </section>
+
+    <p class="label guide-part">Making test data</p>
+
+    <section>
+      <h3>What the rules do</h3>
+      <dl>
+        <dt>Service date shift</dt>
+        <dd>Moves every <code>DTP*472</code> date that sits inside a service line (loop 2400) &mdash; the ones opened by <code>LX</code> and closed by <code>CLM</code>, <code>HL</code>, or <code>SE</code>. Claim-level dates are left alone. Negative values shift backwards. Impossible dates are skipped rather than failing the file.</dd>
+        <dt>Find &amp; replace</dt>
+        <dd>Rewrites element values only. Segment IDs are never touched, and neither is the fixed-width <code>ISA</code> header &mdash; changing a value's length there breaks the interchange for the receiver. Scope it to specific segments to keep a common string from being rewritten everywhere.</dd>
+        <dd><b>Anywhere</b> matches a substring of any element. <b>Whole element</b> matches only when the entire element is the search text. <b>Whole component</b> splits composites first, so in <code>SV1*HC:99213:25</code> it can match <code>99213</code> on its own &mdash; whole element cannot, because there the element is <code>HC:99213:25</code>.</dd>
+        <dd>Replacement text containing this file's element separator or segment terminator is rejected rather than written, because it would split the segment it landed in. The component separator is allowed, since it is legal inside an element value.</dd>
+      </dl>
     </section>
 
     <section>
+      <h3>Limited Data Set</h3>
+      <p><b>Create Limited Data Set</b> is a separate action from the rules, and ignores whether they are switched on. It produces a <b>HIPAA Limited Data Set</b> (45 CFR 164.514(e)): the direct identifiers are removed, while dates and city, state and ZIP are kept.</p>
+      <p class="hint caution"><b>The output is still PHI.</b> A limited data set is not de-identified data under HIPAA. De-identification is &sect;164.514(b) &mdash; Safe Harbor, or an expert determination &mdash; and data de-identified that way stops being PHI and carries no further HIPAA restriction. A limited data set under &sect;164.514(e) is a weaker thing: it remains protected health information, may only be disclosed for research, public health or health care operations, and requires a <b>data use agreement</b> with whoever receives it. This tool is not an expert determination and none of this is legal advice.</p>
+      <p>Safe Harbor is not offered because it cannot be expressed in a valid 837 &mdash; see <b>Dates</b> below.</p>
+      <dl>
+        <dt>What is replaced</dt>
+        <dd>Inside the subscriber, patient and other-subscriber loops (2010BA, 2010CA, 2330A) only: names and member ids on <code>NM1</code>, street address on <code>N3</code>, contact details on <code>PER</code>, social security (<code>REF*SY</code>) and medical record (<code>REF*EA</code>) numbers. Patient account numbers on <code>CLM-01</code> are renumbered, keeping one fake number per real one so distinct claims stay distinct.</dd>
+        <dt>What is kept</dt>
+        <dd>City, state and ZIP on <code>N4</code>, and every provider &mdash; billing, rendering, referring, supervising, facility. An NPI, a provider name and a tax ID are not patient information, and a file whose providers no longer exist is much less useful as test data. Targeting is by loop rather than by name shape, which is what keeps <code>NM1*82</code> and <code>NM1*DN</code> &mdash; both real people &mdash; untouched.</dd>
+        <dt>Dates</dt>
+        <dd>Shifted, not removed. Each patient gets one offset of up to 180 days in either direction, applied to their date of birth and to every date inside their claims, so intervals, sequencing and timely-filing behaviour survive. Safe Harbor's year-only rule cannot be expressed in a valid 837 &mdash; <code>D8</code> is <code>CCYYMMDD</code> and <code>DTP*472</code> is required on every service line &mdash; so it would force every date to <code>YYYY0101</code> and destroy exactly what makes the file testable.</dd>
+        <dt>Consistency and reversibility</dt>
+        <dd>One person keeps one identity across the whole file: the mapping is keyed on the person &mdash; member id where there is one, otherwise name and date of birth &mdash; so two claims for the same member get the same fake name <em>and</em> the same fake member id. The mapping is drawn fresh for each run, held in memory, and never written or exported, so the run is one-way and two runs of the same file produce different people.</dd>
+      </dl>
+    </section>
+
+    <p class="label guide-part">Reference</p>
+
+    <!-- ---- 837 reference ---------------------------------------------
+         Everything below the prose is generated at load time from the same
+         tables the Tree tab and the element inspector read, so the guide
+         cannot drift from what the app actually decodes. -->
+    <section class="ref">
+      <h3>Anatomy of an 837</h3>
+      <p>A claim file is three envelopes deep before a claim appears. <code>ISA</code> opens the <b>interchange</b> &mdash; one transmission between two trading partners &mdash; and carries the delimiters every other segment is read with. <code>GS</code> opens a <b>functional group</b> of like transactions. <code>ST</code> opens one <b>transaction set</b>: for an 837 that is one batch of claims. Each is closed by a matching trailer in reverse order, <code>SE</code>, <code>GE</code>, <code>IEA</code>, and each trailer repeats a count and a control number that the receiver checks before reading anything.</p>
+      <p>Inside the transaction, claims are not a flat list. <code>HL</code> segments build a hierarchy: the <b>billing provider</b> comes first, the <b>subscriber</b> hangs beneath it, and a <b>patient</b> loop appears only when the patient is someone other than the subscriber &mdash; a child on a parent's policy, say. Each <code>HL</code> carries its own id and a pointer to its parent's, which is what makes the nesting recoverable. <code>CLM</code> then opens a claim, and <code>LX</code> opens each service line within it.</p>
+      <p>The implementation guide numbers every one of those positions &mdash; <code>2010BA</code> is the subscriber's name, <code>2400</code> a service line. The number matters because the same segment means different things in different places: <code>NM1*82</code> is loop <code>2310B</code> under a claim and <code>2420A</code> under a service line. The Tree tab labels each group with the loop it resolved to, and the tables below are that same knowledge, listed out.</p>
+
+      <h4 class="ref-h">Loops</h4>
+      <p class="ref-note">Each loop, the segment that opens it, and where it sits. Generated from the loop tables the Tree tab resolves against.</p>
+      <div id="refLoops"></div>
+
+      <h4 class="ref-h">Segments</h4>
+      <p class="ref-note">What each segment id stands for. These are the names shown beside every row in the Document tab.</p>
+      <div id="refSegments"></div>
+
+      <h4 class="ref-h">Qualifier codes</h4>
+      <p class="ref-note">Codes that change what the rest of a segment means. The element inspector decodes these in place when you open a segment.</p>
+      <div id="refQualifiers"></div>
+    </section>
+
+    <p class="label guide-part">Privacy</p>
+
+    <section>
       <h3>Where your file goes</h3>
-      <p>Nowhere. It is read in this tab, edited in memory, and handed back through your browser's download. Nothing is uploaded and nothing persists after you close the tab.</p>
+      <p>Nowhere. It is read in this tab, edited in memory, and handed back through your browser's download. Nothing is uploaded, no server is involved, and nothing persists after you close the tab &mdash; which is also why a Limited Data Set mapping cannot be recovered once the run is done.</p>
     </section>
   </div>
 </dialog>
@@ -2039,7 +2251,7 @@ function repairControlCounts(doc) {
 }
 
 // Same collision-safe naming as the desktop app: stem_processed_<stamp>.ext
-function buildOutputName(inputName) {
+function buildOutputName(inputName, tag = "processed") {
   const now = new Date();
   const p = (n) => String(n).padStart(2, "0");
   const stamp =
@@ -2049,7 +2261,7 @@ function buildOutputName(inputName) {
   const dot = inputName.lastIndexOf(".");
   const stem = dot > 0 ? inputName.slice(0, dot) : inputName;
   const suffix = dot > 0 ? inputName.slice(dot) : ".edi";
-  return `${stem}_processed_${stamp}${suffix}`;
+  return `${stem}_${tag}_${stamp}${suffix}`;
 }
 
 /* engine:end */
@@ -2630,6 +2842,432 @@ function flattenTree(root, opts) {
   return rows;
 }
 
+/* ---- de-identification ---------------------------------------------- */
+
+// Produces a HIPAA Limited Data Set (45 CFR 164.514(e)) rather than Safe
+// Harbor. An LDS strips the 16 direct identifiers but *permits* dates and
+// city/state/ZIP, which is the whole point here: Safe Harbor's year-only date
+// rule cannot be expressed in a valid 837 -- X12 `D8` is CCYYMMDD and DTP*472
+// is required on every service line, so the only conforming output sets every
+// date to YYYY0101, destroying intervals, sequencing and timely-filing
+// behaviour. Dates are shifted instead, which is free safety and keeps the
+// gaps between service dates realistic.
+//
+// Providers are left alone: NPIs, provider names and tax IDs are not patient
+// PHI, and a test file whose providers no longer exist is much less useful.
+//
+// This lives outside the engine block because it depends on buildTree: the
+// loop a name sits in is what decides whether it is a patient. NM1*DN is a
+// referring provider and NM1*82 a rendering provider -- both natural persons,
+// both of which a "looks like a human name" test would wrongly scramble.
+const PERSON_LOOPS = new Set(["2010BA", "2010CA", "2330A"]);
+
+// Deliberately unmistakable as real data. Someone reading a de-identified
+// file should be able to tell at a glance that they are not looking at a
+// patient, which a plausible-but-fake name pool would defeat.
+const FAKE_SURNAMES = [
+  "ALDERTON", "BRAMBLE", "CINDERWICK", "DUNMORE", "EVERSHED", "FALLOWFIELD",
+  "GRIMSBY", "HOLLOWAY", "IRONBRIDGE", "JESSAMY", "KETTLEWELL", "LARKSPUR",
+  "MARLOWE", "NETHERFIELD", "OAKENSHAW", "PENHALIGON", "QUILLFEATHER",
+  "RAVENSCROFT", "STARLINGTON", "THORNBURY", "UNDERWOOD", "VELLACOTT",
+  "WEATHERBY", "YARDLEY", "ZENNORWICK",
+];
+const FAKE_GIVEN = [
+  "ARLO", "BIRDIE", "CASPIAN", "DELPHINE", "EMRYS", "FENWICK", "GWENDOLEN",
+  "HARLOW", "INIGO", "JUNIPER", "KESTREL", "LINNET", "MERIDITH", "NIAMH",
+  "ORLANDO", "PERPETUA", "QUENTIN", "ROWENA", "SEBASTIAN", "TAMSIN",
+  "URSULA", "VIOLA", "WILFRED", "XANTHE", "YOLANDE",
+];
+const FAKE_STREETS = [
+  "ALDER", "BIRCH", "CEDAR", "DAMSON", "ELDER", "FIRCONE", "GORSE",
+  "HAWTHORN", "IVYBANK", "JUNIPER", "KINGFISHER", "LARCH", "MULBERRY",
+  "NIGHTJAR", "OSIER", "PLOVER", "QUINCE", "ROWAN", "SORREL", "TEASEL",
+];
+const STREET_TYPES = ["ST", "AVE", "RD", "LN", "WAY", "DR"];
+
+// Small deterministic PRNG. Seeded per run from an in-memory key that is
+// never stored, so two runs of the same file produce different people --
+// but a seed can be pinned in tests, where reproducibility is the point.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Rebuilds a value with the same length and the same character classes:
+// digits stay digits, letters stay letters, and punctuation stays put. A
+// member id keeps its issuer-recognisable shape, and -- because the result
+// is alphanumeric -- it can never contain a delimiter and split its segment.
+function reshapeId(value, rand) {
+  return String(value).replace(/[A-Za-z0-9]/g, (ch) => {
+    if (ch >= "0" && ch <= "9") return String(Math.floor(rand() * 10));
+    const alphabet = "ABCDEFGHIJKLMNPQRSTUVWXYZ"; // no O: too easily read as zero
+    return alphabet[Math.floor(rand() * alphabet.length)];
+  });
+}
+
+class DeidentifyRule {
+  // `seed` is optional and exists for tests; left out, each run draws a fresh
+  // key, so nothing about the mapping survives the page.
+  constructor(seed) {
+    this.name = "deidentify";
+    this.label = "Limited Data Set";
+    this.kind = "deid";
+    this.rand = mulberry32(seed === undefined ? Math.floor(Math.random() * 2 ** 32) : seed);
+    // Real identity token -> persona. Built fresh here, discarded with the
+    // rule: no mapping table is kept, written, or exported, so the run is
+    // one-way and the output needs no special safeguarding.
+    this.people = new Map();
+    // Real claim number -> fake claim number, kept separate from the persona
+    // on purpose. One patient legitimately has many claims with distinct
+    // account numbers, so folding CLM-01 into the persona would collapse
+    // claims that the file distinguishes.
+    this.accounts = new Map();
+  }
+
+  persona(token) {
+    let person = this.people.get(token);
+    if (person) return person;
+    const pick = (list) => list[Math.floor(this.rand() * list.length)];
+    const n = this.people.size + 1;
+    person = {
+      last: pick(FAKE_SURNAMES),
+      first: pick(FAKE_GIVEN),
+      middle: FAKE_GIVEN[Math.floor(this.rand() * FAKE_GIVEN.length)].slice(0, 1),
+      // The counter guarantees uniqueness where the pools alone would not:
+      // two patients drawing the same surname must still be two patients.
+      tag: String(n),
+      street: `${100 + Math.floor(this.rand() * 8900)} ${pick(FAKE_STREETS)} ${pick(STREET_TYPES)}`,
+      phone: String(2000000000 + Math.floor(this.rand() * 7999999999)).slice(0, 10),
+      // +/- 180 days, never 0: a shift of nothing is not a shift.
+      offset: (this.rand() < 0.5 ? -1 : 1) * (1 + Math.floor(this.rand() * 180)),
+      ids: new Map(), // real id -> fake id, per person, so shapes are kept
+    };
+    this.people.set(token, person);
+    return person;
+  }
+
+  // One person can carry several identifiers -- member id, SSN, medical
+  // record number -- and each has its own shape. Mapping them per person
+  // keeps them stable without letting one bleed into another.
+  fakeId(person, value) {
+    if (!value) return value;
+    let out = person.ids.get(value);
+    if (!out) { out = reshapeId(value, this.rand); person.ids.set(value, out); }
+    return out;
+  }
+
+  fakeAccount(value) {
+    if (!value) return value;
+    let out = this.accounts.get(value);
+    if (!out) { out = reshapeId(value, this.rand); this.accounts.set(value, out); }
+    return out;
+  }
+
+  // The identity token has to be stable across every appearance of one
+  // person in the file, and it has to be read from the *real* values before
+  // anything is rewritten. Member id is the strongest signal; failing that,
+  // name plus date of birth. Keying on the person rather than on each field
+  // is what stops two claims for one member getting the same fake name but
+  // different fake member ids -- which would break exactly the patient
+  // matching this exists to protect.
+  identityToken(segments, indices) {
+    let memberId = "", name = "", dob = "";
+    for (const i of indices) {
+      const seg = segments[i];
+      if (seg.id === "NM1") {
+        memberId = seg.elements[8] || "";
+        name = [seg.elements[2], seg.elements[3], seg.elements[4]].join("|");
+      } else if (seg.id === "DMG") {
+        dob = seg.elements[1] || "";
+      } else if (seg.id === "REF" && (seg.elements[0] === "SY" || seg.elements[0] === "EA")) {
+        if (!memberId) memberId = seg.elements[0] + ":" + (seg.elements[1] || "");
+      }
+    }
+    return memberId ? "id:" + memberId : "nd:" + name + "|" + dob;
+  }
+
+  apply(segments) {
+    const marks = new Map(); // segment index -> Set of element indices
+    const mark = (i, el) => {
+      let set = marks.get(i);
+      if (!set) { set = new Set(); marks.set(i, set); }
+      set.add(el);
+    };
+    const put = (i, el, value) => {
+      if (segments[i].elements[el] === value) return; // no-op: don't claim a change
+      segments[i].elements[el] = value;
+      mark(i, el);
+    };
+
+    // Every segment index under a node, so an identity can be read from a
+    // whole person loop before any of it is rewritten.
+    const descendants = (node, out = []) => {
+      if (node.kind === "segment") { out.push(node.seg); return out; }
+      for (const child of node.children) descendants(child, out);
+      return out;
+    };
+
+    const shiftD8 = (i, el, days) => {
+      const value = segments[i].elements[el];
+      const shifted = shiftDate8(value, days);
+      if (shifted !== null) { put(i, el, shifted); return; }
+      // RD8 ranges are CCYYMMDD-CCYYMMDD. shiftDate8 rejects them outright,
+      // and leaving them behind would put an unshifted date next to shifted
+      // ones -- so both halves move by the same offset.
+      const parts = String(value).split("-");
+      if (parts.length !== 2) return;
+      const a = shiftDate8(parts[0], days), b = shiftDate8(parts[1], days);
+      if (a !== null && b !== null) put(i, el, a + "-" + b);
+    };
+
+    // Rewrites one segment against the person whose loop it sits in.
+    const scrub = (i, person) => {
+      const seg = segments[i];
+      switch (seg.id) {
+        case "NM1":
+          put(i, 2, person.last);
+          if (seg.elements[3]) put(i, 3, person.first);
+          if (seg.elements[4]) put(i, 4, person.middle);
+          if (seg.elements[8]) put(i, 8, this.fakeId(person, seg.elements[8]));
+          break;
+        case "N3":
+          put(i, 0, person.street);
+          // A second address line is free-text and can hold anything; there
+          // is no safe way to keep it, so it goes.
+          if (seg.elements[1]) put(i, 1, "");
+          break;
+        case "PER":
+          // 04/06/08 are the contact values; the odd indices before each say
+          // what kind they are, and those stay so the segment still parses.
+          for (const el of [3, 5, 7]) {
+            if (!seg.elements[el]) continue;
+            const kind = seg.elements[el - 1];
+            put(i, el, kind === "EM"
+              ? `${person.first}.${person.last}@example.invalid`.toLowerCase()
+              : reshapeId(seg.elements[el], this.rand));
+          }
+          break;
+        case "REF":
+          // SY is the social security number, EA the medical record number.
+          // Every other qualifier on REF is a claim or licence reference and
+          // is not the patient's.
+          if (seg.elements[0] === "SY" || seg.elements[0] === "EA") {
+            if (seg.elements[1]) put(i, 1, this.fakeId(person, seg.elements[1]));
+          }
+          break;
+        default:
+          break;
+      }
+    };
+
+    // A person loop's identity is read from its real values first, then the
+    // whole loop is rewritten in one go -- DMG carries the date of birth and
+    // sits after NM1, so a single linear pass would key on a name with no DOB.
+    // Date of birth moves with the person, not with any claim they appear in.
+    const scrubLoop = (indices, person) => {
+      for (const i of indices) {
+        scrub(i, person);
+        if (segments[i].id === "DMG" && segments[i].elements[1]) shiftD8(i, 1, person.offset);
+      }
+    };
+
+    // Segments already rewritten as part of a person loop. A claim contains
+    // person loops (2330A), so the claim-level pass below would otherwise
+    // rewrite an identifier a second time, against a different person.
+    const done = new Set();
+
+    // Two contexts move through the tree by different rules, which is the
+    // subtlety worth naming.
+    //
+    // Identity fields are *containment*-scoped: a name is the patient's only
+    // if it sits inside a patient loop, so scrubLoop is applied to a person
+    // loop's own subtree and nowhere else. That is what keeps NM1*82 and
+    // NM1*DN -- rendering and referring providers, both natural persons --
+    // byte-identical.
+    //
+    // `nearest` is *sibling*-scoped instead: a claim is a sibling of the
+    // 2010BA/2010CA loop naming whose claim it is, not a child of it, so the
+    // running value has to survive across the child list. It falls back
+    // through containment too, which is what makes a patient HL with no
+    // 2010CA of its own belong to the subscriber above it.
+    //
+    // `owner` freezes at the claim: it is the person the claim is *about*,
+    // which is what claim-level identifiers and every date inside the claim
+    // belong to. Without freezing it, an other-subscriber loop (2330A) would
+    // shift the dates around it by its own offset and pull the claim's
+    // internal sequencing apart.
+    const walk = (node, nearest, owner) => {
+      if (node.kind === "segment") {
+        const i = node.seg, seg = segments[i];
+        if (seg.id === "CLM" && seg.elements[0]) put(i, 0, this.fakeAccount(seg.elements[0]));
+        if (seg.id === "DTP" && owner && seg.elements.length >= 3 &&
+            (seg.elements[1] === "D8" || seg.elements[1] === "RD8")) {
+          shiftD8(i, 2, owner.offset);
+        }
+        // The medical record number is a claim-level segment in 837P (2300
+        // REF*EA), not part of the subscriber loop, so it is the one patient
+        // identifier that has to be caught out here rather than by scrubLoop.
+        if (seg.id === "REF" && owner && !done.has(i) &&
+            (seg.elements[0] === "EA" || seg.elements[0] === "SY") && seg.elements[1]) {
+          put(i, 1, this.fakeId(owner, seg.elements[1]));
+        }
+        return;
+      }
+
+      let near = nearest;
+      for (const child of node.children) {
+        if (child.kind === "group" && child.loop && PERSON_LOOPS.has(child.loop)) {
+          const indices = descendants(child);
+          near = this.persona(this.identityToken(segments, indices));
+          scrubLoop(indices, near);
+          for (const i of indices) done.add(i);
+        }
+        walk(child, near, child.id === "CLM" && child.kind === "group" ? near : owner);
+      }
+    };
+
+    // Nothing above a person loop or a claim is ever reached with a person in
+    // hand, so ISA, GS, ST, BHT and the trailers are left alone by
+    // construction rather than by a list of exceptions.
+    walk(buildTree(segments), null, null);
+
+    let occurrences = 0;
+    const out = [];
+    for (const [segment, elements] of [...marks].sort((a, b) => a[0] - b[0])) {
+      occurrences += elements.size;
+      out.push({ segment, elements: [...elements] });
+    }
+    return { segments: out.length, occurrences, marks: out };
+  }
+}
+
+/* ---- 837 reference -------------------------------------------------- */
+
+// The guide's reference tables are generated from the same constants the
+// Tree tab and the element inspector read, never hand-written. A segment
+// name added to SEGMENT_NAMES shows up here without anyone remembering to
+// update prose, and the guide can never claim a decoding the app doesn't do.
+
+// The two loops opened by a segment directly rather than by a qualifier
+// lookup, so they appear in no table. buildTree opens them on CLM and LX.
+const STRUCTURAL_LOOPS = [
+  { loop: "2300", name: "Claim", opener: "CLM", parent: "2000B" },
+  { loop: "2400", name: "Service line", opener: "LX", parent: "2300" },
+];
+
+// Where each group of loops belongs, what to call that place, and the order
+// they are presented in -- which is the order a file presents them.
+//
+// A list of pairs rather than an object, and deliberately so: "2300", "2320"
+// and "2400" are integer-like keys, so `Object.keys` on an object would hoist
+// them ahead of "ST" and "2000A" in ascending numeric order regardless of how
+// they were written. That put the claim loops above the envelope. Don't
+// convert this back to an object.
+const LOOP_CONTEXTS = [
+  ["ST", "Transaction"],
+  ["2000A", "Billing provider hierarchy"],
+  ["2000B", "Subscriber hierarchy"],
+  ["2000C", "Patient hierarchy"],
+  ["2300", "Claim"],
+  ["2320", "Other subscriber"],
+  ["2400", "Service line"],
+];
+
+function contextLabel(key) {
+  const found = LOOP_CONTEXTS.find(([k]) => k === key);
+  return found ? found[1] : key;
+}
+
+function referenceLoops() {
+  const rows = [];
+
+  // Entity loops are opened by an NM1 whose first element is the qualifier.
+  for (const [parent, table] of Object.entries(ENTITY_LOOPS)) {
+    for (const [qualifier, [loop, name]] of Object.entries(table)) {
+      rows.push({ parent, loop, name, opener: `NM1*${qualifier}` });
+    }
+  }
+  // Anchored loops are opened by the segment id itself.
+  for (const [parent, table] of Object.entries(ANCHOR_LOOPS)) {
+    for (const [segId, [loop, name]] of Object.entries(table)) {
+      rows.push({ parent, loop, name, opener: segId });
+    }
+  }
+  // HL loops key off HL-03, whose codes QUALIFIERS already names.
+  const hlNames = (QUALIFIERS.HL && QUALIFIERS.HL[2]) || {};
+  for (const [code, loop] of Object.entries(HL_LOOPS)) {
+    rows.push({ parent: "ST", loop, name: hlNames[code] || "Hierarchical level", opener: `HL*…*${code}` });
+  }
+  rows.push(...STRUCTURAL_LOOPS);
+
+  // Group by where the loop sits, and order each group by loop id, which is
+  // also roughly the order the loops appear in a file.
+  const groups = new Map();
+  for (const row of rows) {
+    if (!groups.has(row.parent)) groups.set(row.parent, []);
+    groups.get(row.parent).push(row);
+  }
+  for (const list of groups.values()) list.sort((a, b) => a.loop.localeCompare(b.loop));
+
+  // Contexts first in the order a file presents them, then anything the
+  // tables grow later that this list doesn't know about yet.
+  const order = LOOP_CONTEXTS.map(([key]) => key);
+  const rank = (key) => (order.indexOf(key) === -1 ? order.length : order.indexOf(key));
+  return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
+}
+
+function renderReference() {
+  $("refLoops").innerHTML = referenceLoops().map(([parent, rows]) => `
+    <div class="ref-group">
+      <div class="ref-context">${escapeHtml(contextLabel(parent))}${
+        parent === "ST" ? "" : ` <span class="ref-in">${escapeHtml(parent)}</span>`
+      }</div>
+      <table class="ref-table">
+        <tbody>${rows.map((r) => `<tr>
+          <td class="ref-loop">${escapeHtml(r.loop)}</td>
+          <td class="ref-open"><code>${escapeHtml(r.opener)}</code></td>
+          <td class="ref-name">${escapeHtml(r.name)}</td>
+        </tr>`).join("")}</tbody>
+      </table>
+    </div>`).join("");
+
+  const segments = Object.entries(SEGMENT_NAMES).sort((a, b) => a[0].localeCompare(b[0]));
+  $("refSegments").innerHTML = `<table class="ref-table">
+    <tbody>${segments.map(([id, name]) => `<tr>
+      <td class="ref-loop">${escapeHtml(id)}</td>
+      <td class="ref-name">${escapeHtml(name)}</td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+
+  // Only the elements that actually carry a code table; SV1 is present in
+  // QUALIFIERS but empty, and an empty heading would suggest a gap.
+  const blocks = [];
+  for (const [segId, byIndex] of Object.entries(QUALIFIERS)) {
+    for (const [index, codes] of Object.entries(byIndex)) {
+      const entries = Object.entries(codes);
+      if (!entries.length) continue;
+      const position = `${segId}-${String(+index + 1).padStart(2, "0")}`;
+      blocks.push(`<div class="ref-group">
+        <div class="ref-context">${escapeHtml(position)} <span class="ref-in">${
+          escapeHtml(SEGMENT_NAMES[segId] || segId)
+        }</span></div>
+        <table class="ref-table">
+          <tbody>${entries.map(([code, meaning]) => `<tr>
+            <td class="ref-loop">${escapeHtml(code)}</td>
+            <td class="ref-name">${escapeHtml(meaning)}</td>
+          </tr>`).join("")}</tbody>
+        </table>
+      </div>`);
+    }
+  }
+  $("refQualifiers").innerHTML = blocks.join("");
+}
+
 /* ---- theme --------------------------------------------------------- */
 $("themeBtn").addEventListener("click", () => {
   const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -2666,6 +3304,13 @@ function toast(message) {
   el.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+// What a rule's mark is called wherever a changed segment is shown. One
+// place, because the document inspector and the Changes tab have to agree.
+const KIND_LABELS = { shift: "date shift", swap: "replaced", deid: "LDS" };
+function chipLabel(kind) {
+  return KIND_LABELS[kind] || kind;
 }
 
 function escapeHtml(text) {
@@ -3005,6 +3650,27 @@ document.querySelector(".panes").addEventListener("scroll", queuePaint, { passiv
 window.addEventListener("scroll", queuePaint, { passive: true });
 window.addEventListener("resize", queuePaint);
 
+// Which outline entries get a rule drawn above them. Claims run together in
+// a long transaction, so each one after the first opens with a separator.
+//
+// The first claim in a transaction is deliberately left bare: it sits
+// directly under its transaction heading, and a line there would read as
+// cutting the claim off from the transaction it belongs to rather than as
+// dividing it from the claim before. That is the whole rule, and it resets
+// at every transaction -- a file with several ST envelopes has a bare first
+// claim in each.
+function claimStarts(outline) {
+  const starts = new Set();
+  let seen = false;
+  outline.forEach((node, i) => {
+    if (node.depth === 0) { seen = false; return; }
+    if (node.depth !== 1) return;
+    if (seen) starts.add(i);
+    seen = true;
+  });
+  return starts;
+}
+
 function renderOutline() {
   const items = [
     `<button class="onode depth-0" type="button" data-node="all" aria-pressed="${!state.scope}">
@@ -3012,13 +3678,16 @@ function renderOutline() {
      </button>`,
   ];
 
+  const separated = claimStarts(state.outline);
+
   state.outline.forEach((node, i) => {
+    const opensClaim = separated.has(i);
     const selected = !!state.scope && state.scope.start === node.start && state.scope.end === node.end;
     let changed = false;
     for (const idx of state.touched.keys()) {
       if (idx >= node.start && idx < node.end) { changed = true; break; }
     }
-    items.push(`<button class="onode depth-${node.depth}" type="button" data-node="${i}" aria-pressed="${selected}" title="${escapeHtml(node.detail || node.label)}">
+    items.push(`<button class="onode depth-${node.depth}${opensClaim ? " claim-start" : ""}" type="button" data-node="${i}" aria-pressed="${selected}" title="${escapeHtml(node.detail || node.label)}">
       <span class="tick">${node.start + 1}</span>
       <span class="oname">${escapeHtml(node.label)}</span>
       ${changed ? '<span class="flag" title="contains changes"></span>' : ""}
@@ -3114,7 +3783,7 @@ function inspectSegment(index) {
   }).join("");
 
   $("inspectTitle").innerHTML =
-    `<b>${escapeHtml(seg.id)}</b>${kind ? ` <span class="chip ${kind}">${kind === "shift" ? "date shift" : "replaced"}</span>` : ""}`;
+    `<b>${escapeHtml(seg.id)}</b>${kind ? ` <span class="chip ${kind}">${chipLabel(kind)}</span>` : ""}`;
   const dot = " \u00b7 ";
   $("inspectSub").textContent =
     `Segment ${index + 1} of ${state.doc.segments.length}` +
@@ -3758,6 +4427,9 @@ function syncCards() {
 function syncRunButton() {
   const anyRule = $("shiftOn").checked || $("swapOn").checked;
   $("runBtn").disabled = !state.doc || !anyRule;
+  // De-identification takes no configuration, so a loaded file is the only
+  // thing it needs. The rule switches above deliberately don't gate it.
+  $("deidBtn").disabled = !state.doc;
 }
 
 ["shiftOn", "swapOn"].forEach((id) => $(id).addEventListener("change", syncCards));
@@ -3827,6 +4499,39 @@ function run() {
   render(result);
 }
 
+/* ---- de-identify ----------------------------------------------------- */
+$("deidBtn").addEventListener("click", deidentify);
+
+// Runs the de-identification rule on its own. The rule switches in the rail
+// are deliberately ignored: leaving the date shift on as well would move
+// service dates twice, by two unrelated offsets, and the second shift would
+// be attributed to the wrong rule in the change list. Run the rules
+// separately if both are wanted.
+function deidentify() {
+  if (!state.raw) return;
+
+  let result;
+  try {
+    result = processText(state.raw, [new DeidentifyRule()]);
+  } catch (err) {
+    showError("Couldn't create the Limited Data Set. ", err.message);
+    return;
+  }
+
+  $("parseError").hidden = true;
+  $("parseError").innerHTML = "";
+  state.result = result;
+  state.outputName = buildOutputName(state.fileName, "lds");
+  render(result);
+
+  // Worth saying out loud rather than leaving to the rail copy: there is no
+  // way back from here, and the file on screen is now the only copy of this
+  // particular mapping.
+  if (!result.changes.length) {
+    toast("No patient loops found — nothing to strip");
+  }
+}
+
 function render(result) {
   $("stageLabel").textContent = "Result";
   $("stageName").textContent = state.outputName;
@@ -3847,11 +4552,12 @@ function render(result) {
     { label: "Segments in file", value: result.segmentCount, cls: "" },
     { label: "Segments changed", value: result.changes.length, cls: "is-total" },
   ];
+  const TILE_LABELS = { shift: "Dates shifted", swap: "Values replaced", deid: "Identifiers replaced" };
   for (const s of result.summary) {
     tiles.push({
-      label: s.kind === "shift" ? "Dates shifted" : "Values replaced",
+      label: TILE_LABELS[s.kind] || "Values changed",
       value: s.occurrences,
-      cls: s.kind === "shift" ? "is-shift" : "is-swap",
+      cls: "is-" + s.kind,
     });
   }
 
@@ -3897,7 +4603,7 @@ function renderChanges(result) {
   const shown = result.changes.slice(0, MAX_RENDERED_CHANGES);
   const rows = shown.map((change) => {
     const chips = change.kinds.map((kind) =>
-      `<span class="chip ${kind}">${kind === "shift" ? "date shift" : "replaced"}</span>`
+      `<span class="chip ${kind}">${chipLabel(kind)}</span>`
     ).join("");
 
     const changedIdx = new Set();
@@ -3980,7 +4686,15 @@ for (const name of TABS) {
 
 /* ---- guide --------------------------------------------------------- */
 const guide = $("guideDialog");
-const openGuide = () => guide.showModal();
+
+// Built once, on first open rather than at load: it is a few hundred rows of
+// static markup that most sessions never look at, and generating it eagerly
+// would sit in front of the first file being opened.
+let referenceBuilt = false;
+const openGuide = () => {
+  if (!referenceBuilt) { renderReference(); referenceBuilt = true; }
+  guide.showModal();
+};
 $("guideBtn").addEventListener("click", openGuide);
 $("blankGuideBtn").addEventListener("click", openGuide);
 $("guideClose").addEventListener("click", () => guide.close());
