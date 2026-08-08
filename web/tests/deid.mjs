@@ -394,10 +394,49 @@ const noPatients = runDeid(5, [
 check("a file with no patient loops comes out unchanged", noPatients.result.marks, []);
 check("and reports no occurrences", noPatients.result.occurrences, 0);
 
-console.log("\n[13] the loops the rule targets");
+console.log("\n[13] free text is left alone -- a documented limitation, pinned");
+// The README and the guide both state that free-text elements are not scanned,
+// so someone can decide for themselves whether the output is safe to share.
+// This asserts the claim is true. If free-text handling is ever added, this
+// test fails -- which is the point: the docs have to change with it.
+const freeTextRaw = [
+  "ISA*00*          *00*          *ZZ*S              *ZZ*R              *230101*1200*^*00501*000000001*0*T*:",
+  "GS*HC*S*R*20230101*1200*1*X*005010X222A1",
+  "ST*837*0001*005010X222A1",
+  "HL*1**20*1",
+  "NM1*85*2*CLINIC*****XX*1234567893",
+  "HL*2*1*22*0",
+  "SBR*P*18*******CI",
+  "NM1*IL*1*MACDONALD*ROBERT*T***MI*W123456789",
+  "DMG*D8*19800115*M",
+  "CLM*ACCT1*100***11:B:1*Y*A*Y*Y",
+  // Both of these carry the patient's real name in free text, which is exactly
+  // the case the documentation warns about.
+  "NTE*ADD*PATIENT ROBERT MACDONALD SEEN FOR FOLLOW UP, CALL 6145550101",
+  "K3*ROBERT MACDONALD W123456789",
+  "LX*1",
+  "SV1*HC:99213*100*UN*1***1",
+  "DTP*472*D8*20230105",
+  "SE*14*0001",
+  "GE*1*1",
+  "IEA*1*000000001",
+].join("~") + "~";
+const freeText = runDeid(11, freeTextRaw);
+check("the subscriber's structured name is still replaced",
+  freeText.after.find((s) => s.id === "NM1" && s.elements[0] === "IL").elements[2] !== "MACDONALD", true);
+check("NTE free text is untouched, name and all",
+  freeText.after.find((s) => s.id === "NTE").elements,
+  freeText.before.find((s) => s.id === "NTE").elements);
+check("K3 file information is untouched",
+  freeText.after.find((s) => s.id === "K3").elements,
+  freeText.before.find((s) => s.id === "K3").elements);
+check("so the real name genuinely survives somewhere in the output",
+  freeText.after.some((s) => s.elements.some((v) => v.includes("MACDONALD"))), true);
+
+console.log("\n[14] the loops the rule targets");
 check("exactly the three patient-side name loops", [...m.PERSON_LOOPS].sort(), ["2010BA", "2010CA", "2330A"]);
 
-console.log("\n[14] the committed manual-test samples");
+console.log("\n[15] the committed manual-test samples");
 // These are what someone runs the Limited Data Set on by hand, so they have to be
 // worth clicking: clean before the run, and still clean after it. A file that
 // starts reporting findings once de-identified would send whoever is testing

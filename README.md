@@ -113,6 +113,29 @@ measurements and the planned work.
 Any current Chrome, Edge, Firefox or Safari. Uses `<dialog>`, CSS grid and
 `prefers-color-scheme`; no polyfills and no transpilation.
 
+## Using it with real data
+
+The app runs entirely in your browser and transmits nothing. That is a description of how
+it works, not a compliance guarantee, and it is the only assurance it offers. If you open
+a file containing PHI, handling it remains your responsibility:
+
+- **Your obligations do not change.** Whatever governed that data before you opened it
+  here — HIPAA, your organisation's policies, a business associate agreement, a data use
+  agreement, state law — governs it still.
+- **Downloaded output is your file.** It lands in your downloads folder, unencrypted, and
+  nothing here deletes it, tracks it, or knows where it goes next.
+- **A Limited Data Set is still PHI.** It is not de-identified data under HIPAA and still
+  requires a data use agreement before it is shared. See the note above.
+- **Free text is not scanned.** The Limited Data Set rewrites named fields in the loops it
+  recognises. Free-text elements — notes (`NTE`), file information (`K3`), and similar —
+  can carry names or identifiers, and nothing here detects or removes them. Review them
+  yourself before treating output as safe to share.
+- **Masking is a display setting.** The eye button changes what is on screen, never what is
+  in the file or the download.
+
+The software is provided as-is, without warranty of any kind, and none of this is legal
+advice. Deciding whether a given use is permitted is yours to make.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
