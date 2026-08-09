@@ -1,0 +1,23 @@
+# Keeps the Pages workflow's actions current.
+#
+# This exists because the last deprecation surfaced as an annotation on a
+# green run — nothing failed, so there was nothing to notice. A PR is harder
+# to miss than a warning on a build that passed.
+#
+# github-actions is the only ecosystem here on purpose: the browser app and
+# the Python prototype both have zero dependencies, so there is no lockfile,
+# no package.json and no requirements.txt for Dependabot to read.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/" # means .github/workflows for this ecosystem, not the repo root
+    schedule:
+      interval: "monthly"
+    # One PR for all of them rather than four. Action versions here move
+    # together anyway — the Node 24 migration bumped every one at once — and
+    # four separate PRs against a repo this quiet is noise, not signal.
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Bump"
