@@ -1,9 +1,10 @@
-// Shared path resolution for the browser-app test harnesses.
+// Shared paths and small helpers for the browser-app test harnesses.
 //
 // Resolved from this file's own location rather than the working directory,
 // so `node web/tests/parity.mjs` and `cd web/tests && node parity.mjs` both
 // work, on any machine, without the absolute paths these harnesses carried
 // while they lived in a session scratchpad.
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -21,3 +22,19 @@ export const SAMPLES_DIR = join(TESTS_DIR, "samples");
 // Scratch space for generated reference output. Git-ignored: the Python
 // engine regenerates it on demand, and processed EDI may carry PHI.
 export const REF_DIR = join(TESTS_DIR, "ref");
+
+// The app's version, read out of the rail footer.
+//
+// That string is the single source of truth, and it is deliberately the one a
+// user can see: the HTML file gets copied to desktops and shared drives, cut
+// off from the repo, so whatever it says on screen is the only version anyone
+// can establish. Everything else is derived from it — the git tag and the
+// release asset filename are computed in release.mjs, never typed a second
+// time, so they cannot drift from what the downloaded file reports.
+export function appVersion(html = readFileSync(APP, "utf8")) {
+  const hits = [...html.matchAll(/class="version">v(\d+\.\d+\.\d+)</g)];
+  if (hits.length !== 1) {
+    throw new Error(`expected exactly one version string in the app, found ${hits.length}`);
+  }
+  return hits[0][1];
+}

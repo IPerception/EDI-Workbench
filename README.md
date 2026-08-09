@@ -12,6 +12,12 @@ release](https://github.com/IPerception/EDI-Workbench/releases/latest) and open 
 browser, or open `web/EDIWorkbench.html` from a clone. Either way that is the whole
 install — no server, no build step, no npm, no network access at any point.
 
+A hosted demo runs at
+[iperception.github.io/EDI-Workbench](https://iperception.github.io/EDI-Workbench/) — the
+same file, served instead of downloaded, and it transmits nothing either. It tracks `main`
+rather than the latest release, so it can be ahead of the version above. For real data,
+download it and open it locally.
+
 ## Why it exists
 
 Two jobs, both awkward without it:

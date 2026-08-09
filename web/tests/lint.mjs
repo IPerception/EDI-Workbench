@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { APP, TESTS_DIR } from "./paths.mjs";
+import { APP, TESTS_DIR, appVersion } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 let problems = 0;
@@ -124,6 +124,20 @@ if (!railBodyRule) bad("no .rail-body rule found");
 else if (!/overflow-y:\s*auto/.test(railBodyRule[1])) bad(".rail-body must scroll, or the rail overflows the viewport");
 else if (!/min-height:\s*0/.test(railBodyRule[1])) bad(".rail-body needs min-height: 0, or a grid row refuses to shrink and it never scrolls");
 else ok(".rail-body scrolls and can shrink to do it");
+
+/* --- 9. the app states exactly one version -------------------------- */
+// release.mjs derives the tag and the asset filename from this string, so a
+// second copy of it, or none, breaks the one place the release process reads.
+// It only pins the shape here; that the string matches the tag being cut is a
+// release-time question, and release.mjs is where it gets asked.
+try {
+  const v = appVersion(html);
+  const shown = markup.includes(`class="version">v${v}<`);
+  if (!shown) bad(`version v${v} is not rendered in the markup`);
+  else ok(`app states one version, v${v}`);
+} catch (e) {
+  bad(e.message);
+}
 
 console.log(problems ? `\n${problems} problem(s)` : "\nclean");
 process.exit(problems ? 1 : 0);

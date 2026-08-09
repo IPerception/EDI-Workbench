@@ -1,0 +1,45 @@
+# Publishes the app as a live demo at iperception.github.io/EDI-Workbench/.
+#
+# The site is built from web/EDIWorkbench.html rather than a committed
+# docs/index.html on purpose: a second copy of a 200 KB single-file app is a
+# copy that drifts, and the whole point of the version string in the rail is
+# that there is one file to be sure about. Nothing is compiled here — the step
+# below renames one file.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/EDIWorkbench.html", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish; queue at most one behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp web/EDIWorkbench.html _site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
