@@ -30,16 +30,20 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Assemble the site
         run: |
           mkdir -p _site
           cp web/EDIWorkbench.html _site/index.html
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      # All four run on Node 24. upload-pages-artifact must stay at v5 or
+      # later specifically: it pins actions/upload-artifact internally, and
+      # v4 of it still pulled the Node 20 build, which is what put a
+      # deprecation warning on a run where every action named here was current.
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
