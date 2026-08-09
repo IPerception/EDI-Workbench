@@ -401,6 +401,9 @@
   }
   .privacy svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--signal); }
 
+  /* The file gets copied around on its own, so it has to say which build it is. */
+  .version { margin: 0; font-family: var(--mono); font-size: var(--step--1); color: var(--slate); opacity: .65; }
+
   /* ---- stage: nothing loaded ---------------------------------------- */
   .blank {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1486,6 +1489,7 @@
         </svg>
         Your file is read in the browser and never uploaded. Close the tab and nothing is left behind.
       </p>
+      <p class="version">v1.0.0</p>
     </div>
     </div>
   </aside>

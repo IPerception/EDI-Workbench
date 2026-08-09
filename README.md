@@ -7,8 +7,10 @@ test data. Nothing leaves your machine.**
 and value, an outline on the left for jumping between claims and service lines, and the
 rule panel in the rail.](docs/images/document-tab.png)
 
-Open `web/EDIWorkbench.html` in a browser. That is the whole install — no server, no
-build step, no npm, no network access at any point.
+Download the app from the [latest
+release](https://github.com/IPerception/EDI-Workbench/releases/latest) and open it in a
+browser, or open `web/EDIWorkbench.html` from a clone. Either way that is the whole
+install — no server, no build step, no npm, no network access at any point.
 
 ## Why it exists
 
