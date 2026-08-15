@@ -13,6 +13,10 @@ export const PROJECT = join(TESTS_DIR, "..", "..");
 
 export const APP = join(PROJECT, "web", "EDIWorkbench.html");
 export const FIXTURE = join(PROJECT, "tests", "fixtures", "sample_837p.edi");
+// The post-adjudicated report, 005010X298. A separate fixture rather than a
+// variant of the one above: the 837P fixture is what parity and half the
+// assertions in every other suite are pinned to, and it has to stay put.
+export const PACDR_FIXTURE = join(PROJECT, "tests", "fixtures", "sample_837_pacdr.edi");
 export const MAKE_REF = join(TESTS_DIR, "make_ref.py");
 
 // Committed manual-test samples. Generated, but kept in the repo so a UI

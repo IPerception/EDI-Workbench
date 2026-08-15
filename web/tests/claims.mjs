@@ -2,7 +2,7 @@
 // read through it, PHI masking, and CSV export quoting.
 import { readFileSync } from "node:fs";
 
-import { APP, FIXTURE } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -24,6 +24,14 @@ function lift(name, opener) {
   throw new Error("unbalanced: " + name);
 }
 
+// Scalar consts have no bracket to match on, so take the declaration up to
+// its semicolon -- these carry trailing comments, so the line doesn't end there.
+function liftLine(name) {
+  const m = html.match(new RegExp("^const " + name + " = [^\\n]*?;", "m"));
+  if (!m) throw new Error("not found: " + name);
+  return m[0];
+}
+
 const src = [
   lift("splitN", "function splitN(text, sep, maxsplit)"),
   lift("detectDelimiters", "function detectDelimiters(raw)"),
@@ -35,6 +43,8 @@ const src = [
   lift("isPhiField", "function isPhiField(seg, index)"),
   lift("maskText", "function maskText(value)"),
   lift("HL_CLEARS", "const HL_CLEARS = {") + ";",
+  liftLine("GUIDE_PACDR"),
+  lift("guideOf", "function guideOf(segments, stIndex)"),
   lift("buildClaimIndex", "function buildClaimIndex(segments)"),
   lift("elAt", "function elAt(index, n)"),
   lift("nameAt", "function nameAt(index)"),
@@ -42,10 +52,18 @@ const src = [
   lift("procParts", "function procParts(index)"),
   lift("diagnosesAt", "function diagnosesAt(row)"),
   lift("posAt", "function posAt(row)"),
+  lift("toCents", "function toCents(value)"),
+  lift("centsToAmount", "function centsToAmount(cents)"),
+  lift("primaryPayer", "function primaryPayer(row)"),
+  lift("payerAdj", "function payerAdj(row, payer)"),
   lift("CLAIM_COLUMNS", "const CLAIM_COLUMNS = [") + ";",
+  lift("nameAt2330B", "function nameAt2330B(row)"),
+  lift("PACDR_CLAIM_COLUMNS", "const PACDR_CLAIM_COLUMNS = [") + ";",
+  lift("casAmounts", "function casAmounts(adj)"),
+  lift("claimColumns", "function claimColumns(rows)"),
   lift("csvCell", "function csvCell(value)"),
   "const state = { doc: null, mask: false };",
-  "export { parse, buildClaimIndex, HL_CLEARS, CLAIM_COLUMNS, csvCell, maskText, isPhiField, nameAt, procParts, posAt, diagnosesAt, date8, state };",
+  "export { parse, buildClaimIndex, HL_CLEARS, CLAIM_COLUMNS, PACDR_CLAIM_COLUMNS, claimColumns, csvCell, maskText, isPhiField, nameAt, procParts, posAt, diagnosesAt, date8, state, guideOf, GUIDE_PACDR, primaryPayer, payerAdj, toCents, centsToAmount };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -244,6 +262,162 @@ const header = m.CLAIM_COLUMNS.map((c) => m.csvCell(c.label));
 const line = m.CLAIM_COLUMNS.map((c) => m.csvCell(c.get(rows[0])));
 check("every column produces a cell", line.length, header.length);
 check("no column returns undefined", line.every((v) => v !== undefined), true);
+
+console.log("\n[10] the CSV header is a published interface");
+// Pinned exactly, in order. Something downstream reads these by name, so a
+// label may be added at the end but never renamed or reordered -- and the
+// 837P header in particular must not have grown when PACDR did.
+check("the 837P columns are exactly what they have always been",
+  m.claimColumns(rows).map((c) => c.label),
+  ["Claim", "Patient", "Line", "Service date", "Procedure", "Modifiers", "Units",
+   "Charge", "Diagnoses", "Place of service", "Billing provider", "Payer", "Claim total"]);
+check("and the adjudication columns are appended, never substituted",
+  m.CLAIM_COLUMNS.concat(m.PACDR_CLAIM_COLUMNS).map((c) => c.label).slice(13),
+  ["Claim paid", "Line paid", "Line adjustments", "Adjustment codes", "Paid date",
+   "Payers", "Data receiver", "Contract code (CN1-04)"]);
+check("none of them is flagged PHI: they are amounts, codes and organisations",
+  m.PACDR_CLAIM_COLUMNS.filter((c) => c.phi), []);
+
+console.log("\n[11] the post-adjudicated report");
+const pacdrRaw = readFileSync(PACDR_FIXTURE, "utf8");
+const pacdrDoc = m.parse(pacdrRaw);
+m.state.doc = pacdrDoc;
+const padj = m.buildClaimIndex(pacdrDoc.segments);
+const pcols = m.claimColumns(padj);
+const prow = (i) => Object.fromEntries(pcols.map((c) => [c.label, c.get(padj[i])]));
+
+check("the transaction is recognised from ST-03",
+  m.guideOf(pacdrDoc.segments, pacdrDoc.segments.findIndex((s) => s.id === "ST")), m.GUIDE_PACDR);
+check("still one row per service line", padj.length, 2);
+check("the columns grow only for a file that has a PACDR transaction",
+  pcols.length, m.CLAIM_COLUMNS.length + m.PACDR_CLAIM_COLUMNS.length);
+
+const p0 = prow(0);
+// The payer column is the point of the whole exercise: NM1*PR at 2010BB is
+// the agency the report goes to, and it has paid nothing.
+check("payer is the 2330B that adjudicated the claim", p0.Payer, "QUILLFEATHER HEALTH PLAN");
+check("and 2010BB is reported separately as the data receiver",
+  p0["Data receiver"], "STATE HEALTH DATA AGENCY");
+check("claim paid is the primary payer's AMT*D", p0["Claim paid"], "240");
+check("line paid is that payer's SVD-02 on this line", p0["Line paid"], "160");
+check("line adjustments sum the CAS amounts in that 2430", p0["Line adjustments"], "40.00");
+check("adjustment codes pair group with reason", p0["Adjustment codes"], "PR-2");
+check("paid date comes from the line's own DTP*573", p0["Paid date"], "2023-02-10");
+check("payers counts the 2320 loops on the claim", p0.Payers, "2");
+check("the contract code is raw and undecoded", p0["Contract code (CN1-04)"], "CT9910");
+check("the second line has its own adjudication",
+  [prow(1)["Line paid"], prow(1)["Line adjustments"]], ["80", "20.00"]);
+check("the claim-level columns repeat on it",
+  [prow(1)["Claim paid"], prow(1).Payers], ["240", "2"]);
+
+// A 2430 whose SVD-01 names nobody on the claim leaves the columns empty
+// rather than reading someone else's adjudication.
+const noMatch = m.parse(pacdrRaw.replace(/SVD\*QFHP0001/g, "SVD*NOSUCH01"));
+m.state.doc = noMatch;
+const orphan = m.buildClaimIndex(noMatch.segments);
+check("an unmatched line adjudication reports nothing rather than the wrong payer's",
+  [m.payerAdj(orphan[0], m.primaryPayer(orphan[0]))], [null]);
+
+// Payer order is not document order: a report may emit the secondary payer's
+// 2320 first, and real ones do.
+const swapped = m.parse(pacdrRaw
+  .replace("SBR*P*18*******CI~\nAMT*D*240~", "SBR*S*18*******CI~\nAMT*D*240~")
+  .replace("SBR*S*18*******CI~\nAMT*D*45~", "SBR*P*18*******CI~\nAMT*D*45~"));
+m.state.doc = swapped;
+const bySbr = m.buildClaimIndex(swapped.segments);
+check("the primary payer is the one SBR-01 names, not the first reported",
+  m.nameAt(m.primaryPayer(bySbr[0]).nm1), "LARKSPUR BENEFIT PLAN");
+check("and its own amounts follow it",
+  Object.fromEntries(m.claimColumns(bySbr).slice(13, 15).map((c) => [c.label, c.get(bySbr[0])])),
+  { "Claim paid": "45", "Line paid": "30" });
+
+console.log("\n[12] a PACDR claim with no service lines");
+// Regression. The per-line array is shared by reference with the rows that
+// hold it, and closeClaim replaced only the payers -- so the row given to a
+// claim with no LX kept the live array and watched the NEXT claim's SVDs push
+// into it. That claim's line adjudication then showed against this one, in
+// the CSV export as much as in the table.
+const withLineless = m.parse(pacdrRaw
+  .replace("CLM*PATIENTACCTNUM*300*", "CLM*NOLINES*0***11:B:1*Y*A*Y*Y~\nCLM*PATIENTACCTNUM*300*")
+  .replace("SE*55*0001~", "SE*56*0001~"));
+m.state.doc = withLineless;
+const lineless = m.buildClaimIndex(withLineless.segments);
+const lcols = m.claimColumns(lineless);
+const lcell = (r, label) => lcols.find((c) => c.label === label).get(r);
+check("the lineless claim still gets a row", lineless.map((r) => lcell(r, "Claim")),
+  ["NOLINES", "PATIENTACCTNUM", "PATIENTACCTNUM"]);
+check("and carries none of the next claim's line adjudication",
+  [lineless[0].adj.length, lcell(lineless[0], "Line paid"), lcell(lineless[0], "Line adjustments")],
+  [0, "", ""]);
+check("nor its payers", [lineless[0].payers.length, lcell(lineless[0], "Payers")], [0, "0"]);
+check("while the claim that does have lines is unaffected",
+  lineless.slice(1).map((r) => lcell(r, "Line paid")), ["160", "80"]);
+// The Payer column must not fall back to the NM1*PR the other columns read
+// when a PACDR claim names no payer of its own: under this guide that is the
+// 2010BB data receiver, which paid nothing, and a row showing it named the
+// same organisation in Payer and Data receiver both.
+check("and names no payer rather than naming the data receiver",
+  [lcell(lineless[0], "Payer"), lcell(lineless[0], "Data receiver")],
+  ["", "STATE HEALTH DATA AGENCY"]);
+
+// The same fallback leaked across claims: ctx.payer took every NM1*PR it saw,
+// including a 2330B, and survives to the next claim in the same hierarchy --
+// so a claim adjudicated by nobody inherited the previous claim's payer, in
+// the CSV export as much as on screen.
+const trailing = m.parse(pacdrRaw
+  .replace("SE*55*0001~", "CLM*NOPAYER*0***11:B:1*Y*A*Y*Y~\nSE*56*0001~"));
+m.state.doc = trailing;
+const trows = m.buildClaimIndex(trailing.segments);
+const tcols = m.claimColumns(trows);
+const tcell = (r, label) => tcols.find((c) => c.label === label).get(r);
+const noPayer = trows.find((r) => tcell(r, "Claim") === "NOPAYER");
+check("a claim after one that was adjudicated inherits none of its payer",
+  [tcell(noPayer, "Payer"), tcell(noPayer, "Payers")], ["", "0"]);
+check("and the adjudicated claim ahead of it still names its own",
+  tcell(trows[0], "Payer"), "QUILLFEATHER HEALTH PLAN");
+// The column no longer reads this under PACDR, so pin it directly: the field
+// means the 2010BB, and a 2330B taking it would leave that stale meaning for
+// whatever reads it next.
+check("and the field the column stopped reading still means the 2010BB",
+  m.nameAt(noPayer.payer), "STATE HEALTH DATA AGENCY");
+
+console.log("\n[13] an adjustment amount that is not a number");
+// The display twin of the same problem: read as a contributing zero, an
+// unreadable amount silently understated the total beside it. A missing
+// figure is honest where a wrong one is not -- and Checks reports the value.
+const badCas = m.parse(pacdrRaw.replace("CAS*PR*2*40~", "CAS*PR*2*XX~"));
+m.state.doc = badCas;
+const badRows = m.buildClaimIndex(badCas.segments);
+const bcols = m.claimColumns(badRows);
+const bcell = (r, label) => bcols.find((c) => c.label === label).get(r);
+check("the total is left empty rather than quietly short",
+  bcell(badRows[0], "Line adjustments"), "");
+check("but the reason code is still readable, so it is still shown",
+  bcell(badRows[0], "Adjustment codes"), "PR-2");
+check("and the other line still totals normally",
+  bcell(badRows[1], "Line adjustments"), "20.00");
+
+console.log("\n[14] the 837P path is untouched by any of it");
+m.state.doc = doc;
+rows = m.buildClaimIndex(doc.segments);
+check("an 837P row carries no guide", rows.map((r) => r.guide), ["", ""]);
+check("its payer column still reads NM1*PR", row(rows, 0).Payer, "INSURANCE COMPANY");
+check("and its rows report no payers or adjudication",
+  [rows[0].payers.length, rows[0].adj.length, rows[0].receiver], [0, 0, -1]);
+// One file, both kinds: the columns appear, and the 837P rows fill in the
+// ones they have rather than reading the report's.
+const mixed = m.parse(pacdrRaw.replace("IEA*1*000000001~\n", "") +
+  raw.split("\n").slice(1).join("\n").replace("IEA*1*000000001~", "IEA*2*000000001~"));
+m.state.doc = mixed;
+const both = m.buildClaimIndex(mixed.segments);
+check("four rows across the two transactions", both.length, 4);
+check("only the report's rows carry a guide", both.map((r) => !!r.guide), [true, true, false, false]);
+check("the 837P rows do not inherit the report's payers",
+  both.slice(2).map((r) => r.payers.length), [0, 0]);
+check("nor its line adjudication",
+  Object.fromEntries(m.claimColumns(both).slice(13, 16).map((c) => [c.label, c.get(both[2])])),
+  { "Claim paid": "", "Line paid": "", "Line adjustments": "" });
+m.state.doc = doc;
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,6 +1,6 @@
 # Manual-test samples
 
-837P files for exercising the browser app by hand. The automated suites
+837 files for exercising the browser app by hand. The automated suites
 (`node web/tests/all.mjs`) cover the same logic, but nothing in them looks at
 rendering — these exist for the parts only eyes can check.
 
@@ -16,10 +16,13 @@ Regenerate either set at any time — both are deterministic:
 node web/tests/make_samples.mjs        # -> checks/
 node web/tests/make_tree_samples.mjs   # -> tree/
 node web/tests/make_deid_samples.mjs   # -> deid/
+node web/tests/make_pacdr_samples.mjs  # -> pacdr/
 ```
 
-The clean baseline is `tests/fixtures/sample_837p.edi`, which should report no
-problems in any tab.
+The clean baselines are `tests/fixtures/sample_837p.edi` and
+`tests/fixtures/sample_837_pacdr.edi`, which should report no problems in any
+tab. Both are also what the app's two sample buttons load — `lint.mjs` holds
+the embedded copies byte-identical to the files on disk.
 
 ## `checks/` — deliberately broken
 
@@ -72,3 +75,23 @@ several claims — `repeat_patient.edi` and `patient_and_cob.edi` — also carry
 `NM1*DN` and `NM1*82` inside them. Every one of those is a natural person and
 every one must come out byte-identical: that is the check a name-shape
 heuristic fails and loop-based targeting passes.
+
+## `pacdr/` — post-adjudicated reports (005010X298)
+
+One claim adjudicated by two payers across two service lines, so every loop
+the guide exists for is present: `2010BB` as the data receiver, one `2320` per
+payer with its `AMT*D`, and one `2430` per payer per line with its `SVD-02`
+and `CAS`. The Claims tab gains eight columns for these files and the Tree tab
+relabels two loops, neither of which any suite looks at.
+
+| File | What it exercises |
+| --- | --- |
+| `clean_report.edi` | The baseline, a copy of the fixture — nothing should be reported in any tab |
+| `payer_total_off.edi` | A payer's `2320 AMT*D` states 250.00 while its own `SVD-02`s pay 240.00 |
+| `line_does_not_reconcile.edi` | One altered `CAS`, which breaks both adjudications on line 1: the first no longer accounts for the line charge, and the second no longer matches what it left behind |
+| `unknown_payer.edi` | An `SVD-01` naming a payer no `2330B` on the claim identifies |
+
+All three findings are warnings rather than errors. What is checked is
+arithmetic inside the file, never conformance to a particular recipient's
+companion guide — those differ between recipients, so encoding one would make
+the app wrong for every other submitter.

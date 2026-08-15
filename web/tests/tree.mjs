@@ -7,7 +7,7 @@
 // row per element rather than a taller card.
 import { readFileSync } from "node:fs";
 
-import { APP, FIXTURE } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -42,9 +42,14 @@ const src = [
   liftLine("HL_RANK_MAX"),
   liftLine("ENTITY_RANK"),
   liftLine("ROW_H"),
+  liftLine("GUIDE_PACDR"),
+  lift("guideOf", "function guideOf(segments, stIndex)"),
   lift("HL_LOOPS", "const HL_LOOPS = {") + ";",
   lift("ENTITY_LOOPS", "const ENTITY_LOOPS = {") + ";",
+  lift("GUIDE_LOOP_LABELS", "const GUIDE_LOOP_LABELS = {") + ";",
+  lift("loopLabel", "function loopLabel(guide, loop, name)"),
   lift("ANCHOR_LOOPS", "const ANCHOR_LOOPS = {") + ";",
+  liftLine("REPEATED_ANCHORS"),
   lift("enclosingLoop", "function enclosingLoop(stack)"),
   lift("compositeSpec", "function compositeSpec(segId, index)"),
   lift("segmentRole", "function segmentRole(seg)"),
@@ -63,7 +68,7 @@ const src = [
   lift("LOOP_CONTEXTS", "const LOOP_CONTEXTS = [", "[", "]") + ";",
   lift("contextLabel", "function contextLabel(key)"),
   lift("referenceLoops", "function referenceLoops()"),
-  "export { buildTree, defaultExpanded, allGroupKeys, treeMatches, flattenTree, loopTint, parse, referenceLoops, contextLabel, LOOP_CONTEXTS, ROW_H, HL_RANK, HL_RANK_MAX, GROUP_RANK };",
+  "export { buildTree, defaultExpanded, allGroupKeys, treeMatches, flattenTree, loopTint, parse, referenceLoops, contextLabel, LOOP_CONTEXTS, ROW_H, HL_RANK, HL_RANK_MAX, GROUP_RANK, guideOf, GUIDE_PACDR, GUIDE_LOOP_LABELS };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -302,6 +307,29 @@ check("the subscriber's own SBR stays a plain segment",
 check("2320 did not swallow the service line",
   groups(other).filter((g) => g.id === "LX").length, 0);
 
+// Regression, and not a PACDR-only one: a claim adjudicated by two payers
+// carries one 2320 each, and the second SBR used to land as a leaf of the
+// first payer's 2330B -- dragging that payer's own AMT in with it, so the
+// tree showed one payer's money inside another's loop. 2320 is the only
+// anchored loop that other loops nest inside, which is why it alone had to
+// be taught to repeat.
+const twoPayers = m.buildTree([
+  "ST*837*0001", "HL*1**20*1", "NM1*85*2*PROVIDER",
+  "HL*2*1*22*0", "SBR*P*18", "NM1*IL*1*SUB", "NM1*PR*2*PAYER",
+  "CLM*A*100",
+  "SBR*P*18", "AMT*D*60", "NM1*IL*1*SUB", "NM1*PR*2*FIRSTPAYER",
+  "SBR*S*18", "AMT*D*30", "NM1*IL*1*SUB", "NM1*PR*2*SECONDPAYER",
+  "LX*1", "SV1*HC:1*100", "SE*18*0001",
+].map(seg));
+const twoClaim = child(child(child(child(twoPayers, "ST"), "HL"), "HL"), "CLM");
+check("both 2320 loops are children of the claim",
+  groups(twoClaim).map((g) => g.loop), ["2320", "2320", "2400"]);
+check("each keeps its own subscriber and payer",
+  groups(twoClaim).filter((g) => g.loop === "2320").map((g) => groups(g).map((n) => n.loop)),
+  [["2330A", "2330B"], ["2330A", "2330B"]]);
+check("and its own AMT, rather than the previous payer's loop keeping it",
+  groups(twoClaim).filter((g) => g.loop === "2320").map((g) => g.count), [4, 4]);
+
 // 2000C: a patient hierarchical level under a subscriber.
 const withPatient = m.buildTree([
   "ST*837*0001", "HL*1**20*1", "HL*2*1*22*1", "NM1*IL*1*SUB",
@@ -434,7 +462,81 @@ check("the claim and service line loops are present",
 check("the reference covers more than the samples happen to reach",
   listed.size > everyLoop.size, true);
 
-console.log("\n[19] the row height the virtual list depends on");
+console.log("\n[19] which implementation guide a transaction is written to");
+const stOf = (lines) => lines.map(seg);
+check("ST-03 is the primary signal",
+  m.guideOf(stOf(["ST*837*0001*005010X298A1"]), 0), m.GUIDE_PACDR);
+check("and it matches on the prefix, so X298 and X298A1 both resolve",
+  m.guideOf(stOf(["ST*837*0001*005010X298"]), 0), m.GUIDE_PACDR);
+check("an 837P ST-03 resolves to nothing at all",
+  m.guideOf(stOf(["ST*837*0001*005010X222A1"]), 0), "");
+check("a blank ST-03 falls back to the GS-08 above it",
+  m.guideOf(stOf(["GS*HC*S*R*20230101*1200*1*X*005010X298A1", "ST*837*0001"]), 1), m.GUIDE_PACDR);
+check("and to the nearest GS, not the first in the file",
+  m.guideOf(stOf(["GS*HC*S*R*20230101*1200*1*X*005010X298A1", "SE*2*0001", "GE*1*1",
+    "GS*HC*S*R*20230101*1200*2*X*005010X222A1", "ST*837*0002"]), 4), "");
+check("with neither stated, BHT-06 corroborates",
+  m.guideOf(stOf(["ST*837*0001", "BHT*0019*00*0001*20230101*1200*RP"]), 0), m.GUIDE_PACDR);
+check("a submission's BHT-06 does not",
+  m.guideOf(stOf(["ST*837*0001", "BHT*0019*00*0001*20230101*1200*CH"]), 0), "");
+// RP is legal in 837P too, so on its own it must never overrule a stated
+// version -- the whole point of reading BHT last.
+check("BHT-06 never overrules an explicit 005010X222A1",
+  m.guideOf(stOf(["ST*837*0001*005010X222A1", "BHT*0019*00*0001*20230101*1200*RP"]), 0), "");
+check("a transaction that states nothing at all is nothing",
+  m.guideOf(stOf(["ST*837*0001", "NM1*41*2*SUBMITTER"]), 0), "");
+// A GS-08 naming the standard's version but no implementation guide settles
+// nothing, and used to pre-empt BHT-06 anyway -- leaving a report that says
+// RP read as an ordinary 837P, against what the app's own guide promises.
+check("a GS-08 stating a version but no guide still lets BHT-06 corroborate",
+  m.guideOf(stOf(["GS*HC*S*R*20230101*1200*1*X*005010", "ST*837*0001",
+    "BHT*0019*00*0001*20230101*1200*RP"]), 1), m.GUIDE_PACDR);
+check("while an explicit 837P GS-08 overrules BHT-06 as before",
+  m.guideOf(stOf(["GS*HC*S*R*20230101*1200*1*X*005010X222A1", "ST*837*0001",
+    "BHT*0019*00*0001*20230101*1200*RP"]), 1), "");
+// The same rule one level up: a bare ST-03 blocked the GS-08 below it as well
+// as BHT-06, so a transaction stating only the standard's version was read as
+// nothing even where the envelope above it named the guide outright.
+check("a bare ST-03 falls through to a GS-08 that does name the guide",
+  m.guideOf(stOf(["GS*HC*S*R*20230101*1200*1*X*005010X298A1", "ST*837*0001*005010"]), 1),
+  m.GUIDE_PACDR);
+check("and with no GS either, on to BHT-06",
+  m.guideOf(stOf(["ST*837*0001*005010", "BHT*0019*00*0001*20230101*1200*RP"]), 0),
+  m.GUIDE_PACDR);
+
+console.log("\n[20] the two loops a post-adjudicated report renames");
+const pacdrDoc = m.parse(readFileSync(PACDR_FIXTURE, "utf8"));
+const pacdrRoot = m.buildTree(pacdrDoc.segments);
+const pacdrSt = child(child(child(pacdrRoot, "ISA"), "GS"), "ST");
+const pacdrSub = child(child(pacdrSt, "HL"), "HL");
+const pacdrClaim = child(pacdrSub, "CLM");
+check("the transaction node records the guide it resolved to", pacdrSt.guide, m.GUIDE_PACDR);
+check("and says so in its detail line", pacdrSt.detail, "837 PACDR 005010X298");
+check("2010BB is the data receiver, not a payer",
+  groups(pacdrSub).filter((g) => g.loop === "2010BB").map((g) => g.label), ["Data receiver"]);
+const twenty320 = groups(pacdrClaim).filter((g) => g.loop === "2320");
+check("both 2320 loops resolved", twenty320.length, 2);
+check("and the 2330B inside each is the payer that adjudicated the claim",
+  twenty320.flatMap((g) => groups(g).filter((n) => n.loop === "2330B").map((n) => n.label)),
+  ["Adjudicating payer", "Adjudicating payer"]);
+check("2330A keeps its 837P name, which PACDR does not change",
+  twenty320.flatMap((g) => groups(g).filter((n) => n.loop === "2330A").map((n) => n.label)),
+  ["Other subscriber", "Other subscriber"]);
+check("each service line holds two 2430s, one per payer",
+  groups(pacdrClaim).filter((g) => g.loop === "2400")
+    .map((g) => groups(g).filter((n) => n.loop === "2430").length), [2, 2]);
+// The same loops on an 837P must read exactly as they did before.
+check("the 837P file's 2010BB is still the payer", child(hl2, "NM1").loop, "2010BA");
+check("its transaction node carries no guide", [st.guide, st.detail], ["", "837"]);
+check("and the labels are the 837P ones",
+  groups(hl2).filter((g) => g.id === "NM1").map((g) => g.label), ["Subscriber", "Payer"]);
+check("the reference lists the alternate name beside the 837P one",
+  m.referenceLoops().flatMap(([, rs]) => rs).filter((r) => r.alt).map((r) => [r.loop, r.name, r.alt]),
+  [["2010BB", "Payer", "Data receiver"], ["2330B", "Other payer", "Adjudicating payer"]]);
+check("and the override table names only the loops that genuinely differ",
+  Object.keys(m.GUIDE_LOOP_LABELS[m.GUIDE_PACDR]), ["2010BB", "2330B"]);
+
+console.log("\n[21] the row height the virtual list depends on");
 check("ROW_H is the fixed height every tree row is drawn at", m.ROW_H, 24);
 check("HL ranks sit between the transaction and the claim",
   m.HL_RANK > m.GROUP_RANK.ST && m.HL_RANK_MAX < m.GROUP_RANK.CLM, true);

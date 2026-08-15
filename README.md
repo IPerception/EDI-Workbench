@@ -46,9 +46,16 @@ is a browser app and not a service.
   lines, each group labelled with its 837P loop id.
 - **Claims** — one row per service line: patient, date, procedure, modifiers, units,
   charge, diagnoses, payer. Exports to CSV.
+- **Post-adjudicated reports** — `005010X298` files are recognised from `ST-03`, `GS-08`
+  or `BHT-06` and read for what they mean: `2010BB` is the data receiver rather than a
+  payer, the payer that actually paid is the `2330B` inside each `2320`, and the Claims
+  tab gains eight columns for what was paid, adjusted and by whom.
 - **Checks** — control counts and envelope integrity (`SE-01`, `GE-01`, `IEA-01` and
   matching control numbers), plus claim balance against service-line charges, compared
-  as whole cents so a balanced file is never reported as off by a rounding error.
+  as whole cents so a balanced file is never reported as off by a rounding error. For a
+  post-adjudicated report, also whether each payer's claim total matches its own service
+  lines, whether each line's adjudication accounts for the charge, and whether every
+  `SVD-01` names a payer the claim identifies.
 - **Mask** — hides names, addresses, dates of birth and member IDs on screen, for
   screen-sharing a real file. Display only; the file you download is untouched.
 
@@ -103,6 +110,7 @@ The parser is generic X12; the claim-aware features are 837-specific.
 | | Support |
 | --- | --- |
 | **837P** professional claims (005010X222A1) | Full — loop resolution, claim table, validation, Limited Data Set |
+| **837 PACDR** professional post-adjudicated reports (005010X298) | Full — the above, plus adjudication columns and the three balancing checks |
 | **Any X12 interchange** | Parse, browse, inspect, find & replace, control-count checks |
 
 Delimiters are read from the `ISA` header rather than assumed, so a file using `|` and
@@ -116,6 +124,7 @@ newlines parses as readily as `*` and `~`.
 | `web/tests/` | Eight correctness suites, plus generators for the committed sample files. |
 | `web/bench/` | Benchmark over synthetic interchanges up to 150 MB. |
 | `web/PERFORMANCE.md` | Measured limits and the ordered backlog for improving them. |
+| `docs/pacdr-validation.md` | What the post-adjudicated checks do, what they deliberately don't, and why. |
 | `edi_engine/`, `ui/`, `app.py`, `tests/` | The original Python/Tkinter prototype. |
 
 The Python program is not the backend for the browser app — the two are independent
@@ -132,7 +141,7 @@ python -m unittest         # Python prototype
 No dependencies for either. The parity suite shells out to Python to regenerate its
 reference output, so run it with both available.
 
-Sample 837P files for manual testing live in `web/tests/samples/`, with a README
+Sample 837 files for manual testing live in `web/tests/samples/`, with a README
 tabulating what each one exercises. All of them are synthetic — deliberately so, since
 they are committed.
 

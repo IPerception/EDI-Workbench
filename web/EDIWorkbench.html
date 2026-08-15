@@ -1388,7 +1388,8 @@
       <div id="parseError" hidden></div>
 
       <div>
-        <button class="btn link" id="sampleBtn" type="button">Load a sample 837P instead</button>
+        <button class="btn link" id="sampleBtn" type="button">Load a sample 837P</button>
+        <button class="btn link" id="samplePacdrBtn" type="button">&hellip;or a sample PACDR 837</button>
       </div>
     </section>
 
@@ -1583,18 +1584,28 @@
       <h3>The four views</h3>
       <p>The <b>Document</b> tab is the interchange as it is: one row per segment, decoded, with an outline on the left to jump by transaction, claim or service line, and a filter that narrows by segment ID or value. Selecting a row opens the element inspector, which names every element, decodes its qualifiers, and splits composites into their parts.</p>
       <p>The <b>Tree</b> tab shows the nesting the segments imply rather than their order on disk &mdash; the envelope, the <code>HL</code> hierarchy resolved through its parent pointers, then claims and service lines &mdash; with every group labelled by its 837P loop id. <b>Anatomy of an 837</b> below is a reference for what those ids mean.</p>
-      <p>The <b>Claims</b> tab flattens the interchange into one row per service line &mdash; patient, date, procedure, modifiers, units, charge, diagnoses, payer &mdash; which is closer to how a claim is actually read than a list of segments is. <b>Export CSV</b> writes every row, not just the ones on screen.</p>
+      <p>The <b>Claims</b> tab flattens the interchange into one row per service line &mdash; patient, date, procedure, modifiers, units, charge, diagnoses, payer &mdash; which is closer to how a claim is actually read than a list of segments is. A post-adjudicated file adds eight further columns for what was paid, adjusted and by whom; they appear only when the file carries such a transaction, since on an ordinary 837P they would be eight empty columns. <b>Export CSV</b> writes every row, not just the ones on screen.</p>
       <p>The <b>Checks</b> tab reports what is structurally wrong with the file rather than what is in it, and carries a badge with the count so a clean file says so without being opened.</p>
     </section>
 
     <section>
+      <h3>Post-adjudicated reports</h3>
+      <p>An 837 is usually a claim being submitted. <b>005010X298</b> &mdash; post-adjudicated claims data reporting, PACDR &mdash; is the same transaction sent the other way: a payer reporting claims it has already paid, to a state agency collecting them. It is recognised from <code>ST-03</code>, or from the <code>GS-08</code> above it, or failing both from <code>BHT-06</code>, which reads <code>RP</code> for a report where a submission reads <code>CH</code>.</p>
+      <p>Structurally it is the 837P you already know: same loops, same nesting, same ids. What changes is meaning, and two loops change names because of it. <code>2010BB</code> is the <b>data receiver</b> &mdash; the agency being reported to, which has paid nothing &mdash; rather than the payer. The payer that actually adjudicated the claim is the <code>2330B</code> inside each <code>2320</code>, and there is one <code>2320</code> per payer, with a <code>2430</code> per payer per service line carrying what that payer paid on it. The Claims tab reads the payer column from there for these files, and the Tree tab labels both loops by what they mean here.</p>
+      <p>Which payer is primary comes from <code>SBR-01</code>, never from the order the loops appear in: a report is free to emit the secondary payer's block first, and real ones do.</p>
+    </section>
+
+    <section>
       <h3>What Checks looks at</h3>
-      <p>Two kinds of problem, both of which are invisible until someone else rejects the file.</p>
+      <p>Three kinds of problem, all of which are invisible until someone else rejects the file.</p>
       <dl>
         <dt>Control counts and envelopes</dt>
         <dd><code>SE-01</code> must equal the number of segments from <code>ST</code> to <code>SE</code> inclusive, <code>GE-01</code> the number of transaction sets in the group, and <code>IEA-01</code> the number of groups. Each trailer's control number must match the header that opened it. These are how a receiver detects a truncated transmission, so a file that disagrees with itself is refused before the claims are read at all.</dd>
         <dt>Claim balance</dt>
         <dd><code>CLM-02</code> is compared against the charges on the claim's service lines. Amounts are compared as whole cents, so a file that balances is never reported as off by a rounding error. A line charge that isn't a number is reported on its own, and the claim total check is skipped rather than measured against a sum that can't be computed.</dd>
+        <dt>Post-adjudicated claims</dt>
+        <dd>Only for a PACDR transaction, and all warnings rather than errors. Each payer's <code>2320 AMT*D</code> is compared against the <code>SVD-02</code> amounts on its own <code>2430</code>s &mdash; but only where that payer reported every line, since adjudicating at claim level alone is legal. Each <code>2430</code> has to account for something: its <code>SVD-02</code> plus its <code>CAS</code> adjustments must come to either the line charge or a patient responsibility another payer left on the same line. And every <code>SVD-01</code> must name a payer the claim identifies in a <code>2330B</code>.</dd>
+        <dd>Deliberately a choice of two rather than a chain from payer to payer: two payers can each adjudicate the whole charge independently, and where the only adjustment is contractual there is no patient responsibility to chain from at all. What is checked is arithmetic and cross-referencing <em>inside</em> the file. Nothing here validates a file against a particular recipient's companion guide &mdash; contract codes, trading partner id formats, remark codes and which payer must appear are that recipient's policy, they differ between them, and encoding one would make the app wrong for everyone else.</dd>
       </dl>
       <p>Selecting a finding jumps to the segment it came from. Nothing here changes the file &mdash; but if a rule ever adds or removes a segment, the control counts are corrected automatically on the way out, since every count above the change would otherwise be wrong.</p>
     </section>
@@ -1645,7 +1656,7 @@
       <h3>Anatomy of an 837</h3>
       <p>A claim file is three envelopes deep before a claim appears. <code>ISA</code> opens the <b>interchange</b> &mdash; one transmission between two trading partners &mdash; and carries the delimiters every other segment is read with. <code>GS</code> opens a <b>functional group</b> of like transactions. <code>ST</code> opens one <b>transaction set</b>: for an 837 that is one batch of claims. Each is closed by a matching trailer in reverse order, <code>SE</code>, <code>GE</code>, <code>IEA</code>, and each trailer repeats a count and a control number that the receiver checks before reading anything.</p>
       <p>Inside the transaction, claims are not a flat list. <code>HL</code> segments build a hierarchy: the <b>billing provider</b> comes first, the <b>subscriber</b> hangs beneath it, and a <b>patient</b> loop appears only when the patient is someone other than the subscriber &mdash; a child on a parent's policy, say. Each <code>HL</code> carries its own id and a pointer to its parent's, which is what makes the nesting recoverable. <code>CLM</code> then opens a claim, and <code>LX</code> opens each service line within it.</p>
-      <p>The implementation guide numbers every one of those positions &mdash; <code>2010BA</code> is the subscriber's name, <code>2400</code> a service line. The number matters because the same segment means different things in different places: <code>NM1*82</code> is loop <code>2310B</code> under a claim and <code>2420A</code> under a service line. The Tree tab labels each group with the loop it resolved to, and the tables below are that same knowledge, listed out.</p>
+      <p>The implementation guide numbers every one of those positions &mdash; <code>2010BA</code> is the subscriber's name, <code>2400</code> a service line. The number matters because the same segment means different things in different places: <code>NM1*82</code> is loop <code>2310B</code> under a claim and <code>2420A</code> under a service line. The Tree tab labels each group with the loop it resolved to, and the tables below are that same knowledge, listed out &mdash; including the two loops a post-adjudicated report calls something else, shown beside their 837P names.</p>
 
       <h4 class="ref-h">Loops</h4>
       <p class="ref-note">Each loop, the segment that opens it, and where it sits. Generated from the loop tables the Tree tab resolves against.</p>
@@ -2092,6 +2103,61 @@ function centsToAmount(cents) {
   return `${sign}${Math.floor(n / 100)}.${String(n % 100).padStart(2, "0")}`;
 }
 
+/* ---- implementation guides ------------------------------------------
+ *
+ * 837 post-adjudicated claims data reporting -- PACDR, 005010X298 -- is
+ * structurally the same transaction as the 837P claim submission the rest of
+ * this file is built around: same loop ids, same anchors, same nesting. What
+ * differs is meaning. Loops that are situational in X222A1 (2320/2330B claim
+ * adjudication, 2430 line adjudication) carry the entire payload, 2010BB is
+ * the agency the report is sent *to* rather than a payer, and 2330B is the
+ * payer that actually paid.
+ *
+ * So detection exists to do *more*, never to do differently: every caller
+ * falls back to today's behaviour on "", which is what keeps a file that is
+ * not a PACDR report running exactly the code it ran before this existed.
+ * X299 institutional and X300 dental fail the prefix match and get that
+ * fallback by construction rather than by an exclusion list.
+ */
+const GUIDE_PACDR = "005010X298"; // a prefix: the guide is published as X298A1
+
+// The guide the transaction opened at `stIndex` is written to, or "".
+function guideOf(segments, stIndex) {
+  const pacdr = (value) => (value && value.startsWith(GUIDE_PACDR) ? GUIDE_PACDR : "");
+  // A stated version settles the question only when it names an implementation
+  // guide. A bare "005010" gives the standard's version and nothing about
+  // which guide, so it falls through to the next signal instead of pre-empting
+  // it -- while an explicit 005010X222A1 still stops the search here, which is
+  // the whole reason a stated version is read before BHT06 at all.
+  const names = (value) => /^\d{6}X/.test(value);
+
+  const st = segments[stIndex];
+  if (names((st && st.elements[2]) || "")) return pacdr(st.elements[2]);
+
+  // ST03 is situational and real files do leave it off; GS08 carries the same
+  // version string one envelope up.
+  for (let i = stIndex - 1; i >= 0; i--) {
+    if (segments[i].id !== "GS") continue;
+    if (names(segments[i].elements[7] || "")) return pacdr(segments[i].elements[7]);
+    break; // the nearest GS is the one that opened this group, telling or not
+  }
+
+  // Nothing declared a version. BHT06 corroborates: a report carries RP where
+  // a claim submission carries CH. Only reached when no version was stated at
+  // all -- RP is legal in X222A1 too, so on its own it must never overrule an
+  // explicit 005010X222A1.
+  for (let i = stIndex + 1; i < segments.length && i <= stIndex + 3; i++) {
+    if (segments[i].id === "BHT") return segments[i].elements[5] === "RP" ? GUIDE_PACDR : "";
+  }
+  return "";
+}
+
+// True when any transaction in the file is a PACDR report, for the parts of
+// the UI that only make sense once one is present.
+function hasPacdr(segments) {
+  return segments.some((seg, i) => seg.id === "ST" && guideOf(segments, i) === GUIDE_PACDR);
+}
+
 // Read-only structural checks. Nothing here mutates the document; the
 // result is a list of findings for the UI to render.
 //
@@ -2109,6 +2175,112 @@ function validateDocument(doc) {
   let groupsInInterchange = 0, setsInGroup = 0;
   let claim = null;
 
+  // PACDR adjudication, tracked only while a transaction declares itself
+  // post-adjudicated: `payer` is the open 2320, `line` the open service line
+  // and `adj` the open 2430 inside it. `inClaim` is not the same question as
+  // `claim !== null` -- a claim stays open until the next CLM or SE, but its
+  // adjudication block ends at the next HL, whose SBR opens 2000B.
+  let guide = "", inClaim = false, payer = null, line = null, adj = null;
+  const closeAdjudication = () => { payer = null; line = null; adj = null; };
+
+  // The three ways a post-adjudicated report can disagree with itself. All
+  // warnings, and all arithmetic or cross-referencing *inside* the file:
+  // nothing here checks conformance to a particular recipient's companion
+  // guide, which varies by recipient and would make the app wrong elsewhere.
+  const checkAdjudication = (pacdr, id) => {
+    const label = id || "(no id)";
+    const known = new Set(pacdr.payers.map((p) => p.id).filter(Boolean));
+
+    // 1. What a payer states it paid on the claim is what its own service
+    // lines add up to. The one balancing rule both companion guides assert.
+    for (const p of pacdr.payers) {
+      if (!p.id || p.amt === "") continue; // situational: absent is not wrong
+      const stated = toCents(p.amt);
+      if (stated === null) {
+        add("warning", "Payer paid amount is not a number",
+          `AMT*D for payer ${p.id} on claim ${label} reads "${p.amt}".`, p.at);
+        continue;
+      }
+      if (!pacdr.lines.length) continue;
+      const perLine = pacdr.lines.map((l) => l.adj.filter((a) => a.id === p.id));
+      // Adjudicating at claim level only is legal, so the sum is comparable
+      // just when this payer reported every one of the claim's lines.
+      if (perLine.some((list) => !list.length)) continue;
+      const mine = perLine.flat();
+      if (mine.some((a) => a.paid === null)) continue; // the sum is unknowable
+      const sum = mine.reduce((n, a) => n + a.paid, 0);
+      if (sum !== stated) {
+        add("warning", "Payer paid amount does not match its service lines",
+          `AMT*D for payer ${p.id} on claim ${label} states ${centsToAmount(stated)}, ` +
+          `but its ${mine.length} line adjudication${mine.length === 1 ? "" : "s"} add up to ` +
+          `${centsToAmount(sum)}.`, p.at);
+      }
+    }
+
+    // 2. What one payer paid plus what it adjusted has to account for
+    // something: the line charge, or the patient responsibility another payer
+    // on the same line left behind.
+    //
+    // Deliberately a disjunction rather than a chain from payer to payer. Two
+    // payers can each adjudicate the whole charge independently -- where the
+    // only adjustment is contractual there is no patient responsibility to
+    // chain from at all -- and a chained rule reports that valid line as a
+    // discrepancy.
+    // 2. What a payer paid plus what it adjusted accounts for the line --
+    // measured against the line charge OR another 2430's patient
+    // responsibility, never as a chain through the payers. The disjunction is
+    // deliberate and a chain is the tempting wrong answer; docs/pacdr-
+    // validation.md carries the counterexample that rules it out.
+    for (const l of pacdr.lines) {
+      // One unreadable adjustment suppresses the whole line, not just the
+      // 2430 carrying it. Reconciliation here is a property of the line
+      // rather than of one payer -- each payer is measured against what the
+      // others left behind as much as against the charge -- so a partial
+      // total would fail payers that balance and pass ones that do not. Same
+      // posture as an unreadable line charge suppressing the claim total
+      // instead of being quietly dropped out of the sum.
+      if (l.adj.some((a) => a.bad)) continue;
+
+      for (const a of l.adj) {
+        if (a.paid === null) continue;
+        const total = a.paid + a.cas;
+        if (l.charge !== null && total === l.charge) continue;
+        const others = l.adj.filter((o) => o !== a && o.pr !== null);
+        if (others.some((o) => o.pr === total)) continue;
+
+        // Both comparators are situational -- a line charge that is not a
+        // number is reported on its own elsewhere, and a line may carry no
+        // patient responsibility at all. Whichever survives is what the
+        // finding names, and with neither the check stands down rather than
+        // reporting against a figure it has already admitted it cannot read.
+        const against = [];
+        if (l.charge !== null) against.push(`the line charge of ${centsToAmount(l.charge)}`);
+        if (others.length) {
+          against.push("a patient responsibility on the line " +
+            `(${others.map((o) => centsToAmount(o.pr)).join(", ")})`);
+        }
+        if (!against.length) continue;
+
+        add("warning", "Line adjudication does not reconcile",
+          `SVD for payer ${a.id || "(no id)"} on claim ${label} pays ${centsToAmount(a.paid)} ` +
+          `and adjusts ${centsToAmount(a.cas)}, totalling ${centsToAmount(total)}, which is ` +
+          (against.length === 1 ? `not ${against[0]}.` : `neither ${against[0]} nor ${against[1]}.`),
+          a.at);
+      }
+    }
+
+    // 3. A line adjudication has to come from a payer the claim identifies.
+    // Not the converse: a 2320 with no line detail is legal.
+    for (const l of pacdr.lines) {
+      for (const a of l.adj) {
+        if (!a.id || known.has(a.id)) continue;
+        add("warning", "Line adjudication names a payer the claim does not identify",
+          `SVD-01 on claim ${label} is "${a.id}", which matches no 2330B payer id on this claim` +
+          (known.size ? ` (${[...known].join(", ")}).` : "."), a.at);
+      }
+    }
+  };
+
   const closeClaim = () => {
     if (!claim) return;
     const stated = toCents(claim.stated);
@@ -2121,6 +2293,7 @@ function validateDocument(doc) {
         `but its ${claim.lines} service line${claim.lines === 1 ? "" : "s"} add up to ` +
         `${centsToAmount(claim.sum)}.`, claim.at);
     }
+    if (claim.pacdr) checkAdjudication(claim.pacdr, claim.id);
     claim = null;
   };
 
@@ -2140,11 +2313,15 @@ function validateDocument(doc) {
       case "ST":
         st = { at: i, control: seg.elements[1] };
         setsInGroup++;
+        guide = guideOf(segments, i);
         break;
 
       case "CLM":
         closeClaim();
-        claim = { at: i, id: seg.elements[0], stated: seg.elements[1] || "", sum: 0, lines: 0 };
+        claim = { at: i, id: seg.elements[0], stated: seg.elements[1] || "", sum: 0, lines: 0,
+          pacdr: guide ? { payers: [], lines: [] } : null };
+        closeAdjudication();
+        inClaim = true;
         break;
 
       case "SV1": case "SV2": {
@@ -2160,11 +2337,105 @@ function validateDocument(doc) {
         } else {
           claim.sum += cents;
         }
+        // The line was opened by its LX; this is only what it charges.
+        if (line) line.charge = cents;
         break;
       }
 
+      /* Post-adjudicated reporting. Nothing below records anything without a
+         guide: every one of these segments is legal in an ordinary 837P,
+         where it carries no adjudication and nothing here should read it.
+         HL and LX only close what is open, which on an 837P is nothing. */
+      case "HL":
+        closeAdjudication();
+        inClaim = false;
+        break;
+
+      case "SBR":
+        if (guide && inClaim && claim.pacdr) {
+          payer = { sbr01: seg.elements[0] || "", id: "", amt: "", at: i };
+          claim.pacdr.payers.push(payer);
+        }
+        break;
+
+      case "NM1":
+        // 2330B: the payer that adjudicated the claim, whose NM1-09 is what
+        // each of its line adjudications names in SVD-01.
+        if (guide && payer && seg.elements[0] === "PR") payer.id = seg.elements[8] || "";
+        break;
+
+      case "AMT":
+        if (guide && payer && seg.elements[0] === "D") {
+          payer.amt = seg.elements[1] || "";
+          payer.at = i; // report against the amount, not the SBR above it
+        }
+        break;
+
+      case "LX":
+        // The line is opened here, by the segment that opens loop 2400,
+        // rather than by the SV1 inside it. A line missing its SV1 still
+        // holds 2430s, and those still name payers worth checking -- opening
+        // on the charge meant a malformed line's adjudication was not read at
+        // all. The charge is filled in above when the SV1 arrives; until
+        // then it is unknown rather than zero.
+        line = guide && claim && claim.pacdr ? { charge: null, adj: [] } : null;
+        if (line) claim.pacdr.lines.push(line);
+        // The 2320 ends here too: an AMT after a service line belongs to that
+        // line, and must not overwrite the payer's claim-level paid amount.
+        payer = null;
+        adj = null;
+        break;
+
+      case "SVD":
+        if (guide && line) {
+          adj = { at: i, id: seg.elements[0] || "", paid: toCents(seg.elements[1] || ""),
+            cas: 0, pr: null, bad: false };
+          line.adj.push(adj);
+          // Both checks below stand down on a paid amount they cannot read,
+          // so without this the file reports clean while the summary claims
+          // to have compared a figure nothing ever read. Every other money
+          // element already says so; this is the one the report is about.
+          // Not `bad`: an unreadable SVD-02 makes this 2430's own total
+          // unknowable, but its CAS-derived patient responsibility is still
+          // sound, so siblings measured against it stay checkable.
+          if (adj.paid === null) {
+            add("warning", "Line paid amount is not a number",
+              `SVD-02 for payer ${adj.id || "(no id)"} on claim ` +
+              `${claim.id || "(no id)"} reads "${seg.elements[1] || ""}".`, i);
+          }
+        }
+        break;
+
+      case "CAS":
+        // Only the 2430 currently open, so a claim-level 2320 adjustment is
+        // never counted against a service line. CAS repeats within itself:
+        // one group code, then a reason/amount/quantity triple per repeat.
+        if (guide && adj) {
+          const el = seg.elements;
+          for (let at = 1; at + 1 < el.length; at += 3) {
+            if (!el[at] && !el[at + 1]) continue;
+            const cents = toCents(el[at + 1] || "");
+            if (cents === null) {
+              add("warning", "Line adjustment amount is not a number",
+                `CAS on claim ${claim.id || "(no id)"} reads "${el[at + 1] || ""}".`, i);
+              // One unreadable repeat makes both of this 2430's totals
+              // unknowable -- its own, and the patient responsibility a
+              // sibling payer on the line is measured against. A partial PR
+              // total would fail lines that balance and pass ones that don't.
+              adj.bad = true;
+              continue;
+            }
+            adj.cas += cents;
+            if (el[0] === "PR") adj.pr = (adj.pr === null ? 0 : adj.pr) + cents;
+          }
+        }
+        break;
+
       case "SE": {
         closeClaim();
+        closeAdjudication();
+        inClaim = false;
+        guide = "";
         if (!st) { add("error", "SE with no matching ST", "A transaction trailer appeared before any header.", i); break; }
 
         const counted = i - st.at + 1; // ST through SE inclusive
@@ -2311,6 +2582,78 @@ const SAMPLE_837P = [
   "SV1*HC:87070*50*UN*1***1~",
   "DTP*472*D8*20230101~",
   "SE*27*0001~",
+  "GE*1*1~",
+  "IEA*1*000000001~",
+].join("\n") + "\n";
+
+// The same batch as a post-adjudicated report, 005010X298: two payers who
+// each adjudicated both service lines, a data receiver in 2010BB, and the
+// arithmetic the Checks tab looks at -- each payer's AMT*D equals its own
+// SVD-02s, and each 2430 accounts for either the line charge or the patient
+// responsibility another payer left on the line.
+//
+// Wholly invented, like every sample in this repository, and kept
+// byte-identical to tests/fixtures/sample_837_pacdr.edi -- lint.mjs compares
+// the two, since a sample that has drifted from the fixture the suites assert
+// against would make all of them mean nothing.
+const SAMPLE_PACDR = [
+  "ISA*00*          *00*          *ZZ*SUBMITTERID    *ZZ*RECEIVERID     *230101*1200*^*00501*000000001*0*T*:~",
+  "GS*HC*SUBMITTERID*RECEIVERID*20230101*1200*1*X*005010X298A1~",
+  "ST*837*0001*005010X298A1~",
+  "BHT*0019*00*0001*20230101*1200*RP~",
+  "NM1*41*2*SUBMITTER NAME*****46*SUBMITTERID~",
+  "PER*IC*CONTACT NAME*TE*5551234567~",
+  "NM1*40*2*STATE HEALTH DATA AGENCY*****46*RECEIVERID~",
+  "HL*1**20*1~",
+  "NM1*85*2*BILLING PROVIDER NAME*****XX*1234567893~",
+  "N3*123 MAIN ST~",
+  "N4*ANYTOWN*CA*90210~",
+  "REF*EI*123456789~",
+  "HL*2*1*22*0~",
+  "SBR*P*18*******CI~",
+  "NM1*IL*1*NETHERFIELD*ORLANDO****MI*QF4820731~",
+  "N3*456 ELM ST~",
+  "N4*ANYTOWN*CA*90210~",
+  "DMG*D8*19800101*M~",
+  "NM1*PR*2*STATE HEALTH DATA AGENCY*****PI*SHDA001~",
+  "CLM*PATIENTACCTNUM*300***11:B:1*Y*A*Y*Y~",
+  "HI*ABK:J209~",
+  "CN1*05***CT9910~",
+  "REF*F8*RPT2023000451~",
+  "SBR*P*18*******CI~",
+  "AMT*D*240~",
+  "NM1*IL*1*NETHERFIELD*ORLANDO****MI*QF4820731~",
+  "N3*456 ELM ST~",
+  "N4*ANYTOWN*CA*90210~",
+  "DMG*D8*19800101*M~",
+  "NM1*PR*2*QUILLFEATHER HEALTH PLAN*****PI*QFHP0001~",
+  "DTP*573*D8*20230210~",
+  "REF*F8*QF98001234~",
+  "SBR*S*18*******CI~",
+  "AMT*D*45~",
+  "NM1*IL*1*NETHERFIELD*ORLANDO****MI*QF4820731~",
+  "NM1*PR*2*LARKSPUR BENEFIT PLAN*****PI*LBP0002~",
+  "DTP*573*D8*20230225~",
+  "REF*F8*LB44550099~",
+  "LX*1~",
+  "SV1*HC:99213*200*UN*1***1~",
+  "DTP*472*D8*20230101~",
+  "SVD*QFHP0001*160*HC:99213**1~",
+  "CAS*PR*2*40~",
+  "DTP*573*D8*20230210~",
+  "SVD*LBP0002*30*HC:99213**1~",
+  "CAS*PR*2*10~",
+  "DTP*573*D8*20230225~",
+  "LX*2~",
+  "SV1*HC:87070*100*UN*1***1~",
+  "DTP*472*D8*20230101~",
+  "SVD*QFHP0001*80*HC:87070**1~",
+  "CAS*PR*2*20~",
+  "DTP*573*D8*20230210~",
+  "SVD*LBP0002*15*HC:87070**1~",
+  "CAS*PR*2*5~",
+  "DTP*573*D8*20230225~",
+  "SE*55*0001~",
   "GE*1*1~",
   "IEA*1*000000001~",
 ].join("\n") + "\n";
@@ -2582,6 +2925,20 @@ const ENTITY_LOOPS = {
   },
 };
 
+// The loops a guide renames. X298 reuses the tables above unchanged -- two
+// names out of thirty differ -- so this overrides those two rather than
+// carrying a second copy of the whole thing, which would drift the moment a
+// loop is added to one and not the other.
+const GUIDE_LOOP_LABELS = {
+  [GUIDE_PACDR]: { "2010BB": "Data receiver", "2330B": "Adjudicating payer" },
+};
+
+// What to call `loop` under `guide`, falling back to its 837P name.
+function loopLabel(guide, loop, name) {
+  const table = GUIDE_LOOP_LABELS[guide];
+  return (table && table[loop]) || name;
+}
+
 // Loops anchored by something other than an NM1, keyed the same way. 2320
 // is a sibling of the service lines rather than a child, so it takes the
 // service line's rank and the two close each other; the rest sit inside a
@@ -2594,6 +2951,24 @@ const ANCHOR_LOOPS = {
     LQ: ["2440", "Form identification", ENTITY_RANK],
   },
 };
+
+/* Where to resolve an anchored loop from when the segment is already inside
+ * the loop it opens -- that is, when the loop repeats.
+ *
+ * enclosingLoop stops at any loop that other loops nest inside, and 2320 is
+ * the only anchored loop that is also one of those. So the second SBR of a
+ * claim resolved against ANCHOR_LOOPS["2320"], which does not exist, and
+ * landed as a leaf of the previous payer's 2330B -- taking that payer's own
+ * AMT with it. One 2320 per payer is the ordinary shape of a post-adjudicated
+ * report and appears in coordination of benefits besides, so this is a common
+ * file, not an exotic one. 2410/2430/2440 hold no entity loops, so their
+ * repeats already resolve against the service line above them.
+ *
+ * A separate table rather than a "2320" key on ANCHOR_LOOPS, because the
+ * guide reference is generated from that table and would then list 2320
+ * twice, once per place it can be opened from.
+ */
+const REPEATED_ANCHORS = { "2320": ANCHOR_LOOPS["2300"] };
 
 // The loop a segment is currently sitting in, which decides what its own
 // loop id would be. Entity loops are skipped: 2010BA is somewhere a segment
@@ -2634,6 +3009,7 @@ function buildTree(segments) {
 
   let hlById = new Map(); // HL-01 -> the stack entry it opened, within one transaction
   let claimNo = 0;
+  let guide = "";         // resolved per transaction, since one file can mix them
 
   segments.forEach((seg, i) => {
     const el = seg.elements;
@@ -2647,12 +3023,18 @@ function buildTree(segments) {
         closeTo(GROUP_RANK.GS);
         open(GROUP_RANK.GS, i, seg, "Functional group", el[5] ? "Control " + el[5] : "");
         return;
-      case "ST":
+      case "ST": {
         closeTo(GROUP_RANK.ST);
         hlById = new Map(); // HL ids are only unique within a transaction
         claimNo = 0;
-        open(GROUP_RANK.ST, i, seg, `Transaction ${el[1] || ""}`.trim(), el[0] || "");
+        guide = guideOf(segments, i);
+        // The detail line only grows when a guide was recognised, so an
+        // ordinary 837P transaction still reads as just its set identifier.
+        const node = open(GROUP_RANK.ST, i, seg, `Transaction ${el[1] || ""}`.trim(),
+          guide ? `${el[0] || ""} PACDR ${guide}`.trim() : el[0] || "");
+        node.guide = guide;
         return;
+      }
       case "CLM":
         closeTo(GROUP_RANK.CLM);
         claimNo++;
@@ -2669,7 +3051,7 @@ function buildTree(segments) {
         const table = ENTITY_LOOPS[enclosingLoop(stack)];
         const loop = table ? table[el[0]] : null;
         if (loop) {
-          open(ENTITY_RANK, i, seg, loop[1], "", loop[0]);
+          open(ENTITY_RANK, i, seg, loopLabel(guide, loop[0], loop[1]), "", loop[0]);
           return;
         }
         break; // an unrecognised qualifier is just a segment
@@ -2704,11 +3086,12 @@ function buildTree(segments) {
     // Loops anchored by something other than an NM1: the other-subscriber
     // block inside a claim, and the drug, adjudication and form loops inside
     // a service line.
-    const anchors = ANCHOR_LOOPS[enclosingLoop(stack)];
+    const enclosing = enclosingLoop(stack);
+    const anchors = ANCHOR_LOOPS[enclosing] || REPEATED_ANCHORS[enclosing];
     const anchored = anchors ? anchors[seg.id] : null;
     if (anchored) {
       closeTo(anchored[2]);
-      open(anchored[2], i, seg, anchored[1], "", anchored[0]);
+      open(anchored[2], i, seg, loopLabel(guide, anchored[0], anchored[1]), "", anchored[0]);
       return;
     }
 
@@ -3216,6 +3599,14 @@ function referenceLoops() {
   }
   rows.push(...STRUCTURAL_LOOPS);
 
+  // The two loops PACDR calls something else. Carried as an alternate on the
+  // row rather than as a second table, for the same reason the tree resolves
+  // them through an override: one list of loops, one place to add to.
+  const alternates = GUIDE_LOOP_LABELS[GUIDE_PACDR];
+  for (const row of rows) {
+    if (alternates[row.loop]) row.alt = alternates[row.loop];
+  }
+
   // Group by where the loop sits, and order each group by loop id, which is
   // also roughly the order the loops appear in a file.
   const groups = new Map();
@@ -3242,7 +3633,9 @@ function renderReference() {
         <tbody>${rows.map((r) => `<tr>
           <td class="ref-loop">${escapeHtml(r.loop)}</td>
           <td class="ref-open"><code>${escapeHtml(r.opener)}</code></td>
-          <td class="ref-name">${escapeHtml(r.name)}</td>
+          <td class="ref-name">${escapeHtml(r.name)}${
+            r.alt ? ` <span class="ref-in">${escapeHtml(r.alt)} in PACDR</span>` : ""
+          }</td>
         </tr>`).join("")}</tbody>
       </table>
     </div>`).join("");
@@ -3362,6 +3755,7 @@ fileInput.addEventListener("change", () => {
   fileInput.value = "";
 });
 $("sampleBtn").addEventListener("click", () => loadFile("sample_837p.edi", SAMPLE_837P));
+$("samplePacdrBtn").addEventListener("click", () => loadFile("sample_837_pacdr.edi", SAMPLE_PACDR));
 
 function loadFile(name, raw) {
   state.fileName = name;
@@ -3432,12 +3826,18 @@ function loadFile(name, raw) {
   // whether it is served or opened straight off disk.
   const transaction = st && st.elements.length ? st.elements[0] : "\u2014";
 
-  $("fileMeta").innerHTML = [
+  const meta = [
     `<span><b>${state.doc.segments.length.toLocaleString()}</b> segments</span>`,
     `<span><b>${formatBytes(raw.length)}</b></span>`,
     `<span>transaction <b>${escapeHtml(transaction)}</b></span>`,
     `<span>version <b>${escapeHtml(versionLabel(state.doc.version))}</b></span>`,
-  ].join("");
+  ];
+  // Only stated when a transaction actually is one: 837P files carry no such
+  // slot today and an empty one would imply something is missing.
+  if (hasPacdr(state.doc.segments)) {
+    meta.push(`<span>guide <b>${escapeHtml(GUIDE_PACDR)} PACDR</b></span>`);
+  }
+  $("fileMeta").innerHTML = meta.join("");
 
   // Repetition is only listed when the file actually declares one: pre-5010
   // interchanges have no such separator, and showing an empty slot for them
@@ -4157,24 +4557,35 @@ function maskText(value) {
 // still stands. An unrecognised level clears only the most local entries,
 // which is the conservative choice -- stale context attributes a claim to
 // the wrong person, and that is worse than losing a column.
+// "receiver" sits beside "payer" throughout: under PACDR both are read off
+// an NM1*PR in 2010BB, so whatever invalidates one invalidates the other.
 const HL_CLEARS = {
-  "20": ["billing", "subscriber", "patient", "payer", "rendering"],
-  "21": ["subscriber", "patient", "payer", "rendering"],
-  "22": ["subscriber", "patient", "payer", "rendering"],
+  "20": ["billing", "subscriber", "patient", "payer", "receiver", "rendering"],
+  "21": ["subscriber", "patient", "payer", "receiver", "rendering"],
+  "22": ["subscriber", "patient", "payer", "receiver", "rendering"],
   "23": ["patient", "rendering"],
 };
 
 function buildClaimIndex(segments) {
   const rows = [];
-  const ctx = { billing: -1, subscriber: -1, patient: -1, payer: -1, rendering: -1 };
-  let clm = -1, claimNo = 0, hi = [], lines = 0;
+  const ctx = { billing: -1, subscriber: -1, patient: -1, payer: -1, receiver: -1, rendering: -1 };
+  let clm = -1, claimNo = 0, hi = [], lines = 0, cn1 = -1;
   let lx = -1, sv = -1, dtp = -1;
+
+  // PACDR adjudication, resolved per transaction. `payers` holds the claim's
+  // 2320 loops and `adj` the open service line's 2430s; both are shared by
+  // reference with the rows they belong to, and are only ever replaced while
+  // a PACDR transaction is open -- so an 837P file allocates each of them
+  // once for the whole walk and every row still carries the field.
+  let guide = "", payers = [], adj = [];
+  let payer = null, adj2430 = null;
 
   const emitLine = () => {
     if (clm === -1 || lx === -1) return;
-    rows.push({ claimNo, clm, hi, lx, sv, dtp, ...ctx });
+    rows.push({ claimNo, clm, hi, cn1, lx, sv, dtp, guide, payers, adj, ...ctx });
     lines++;
     lx = -1; sv = -1; dtp = -1;
+    if (guide) adj = [];
   };
 
   const closeClaim = () => {
@@ -4182,22 +4593,74 @@ function buildClaimIndex(segments) {
     // A claim with no service lines is still a claim; give it a row rather
     // than letting it disappear from the table.
     if (clm !== -1 && lines === 0) {
-      rows.push({ claimNo, clm, hi, lx: -1, sv: -1, dtp: -1, ...ctx });
+      rows.push({ claimNo, clm, hi, cn1, lx: -1, sv: -1, dtp: -1, guide, payers, adj, ...ctx });
     }
-    clm = -1; hi = []; lines = 0;
+    clm = -1; hi = []; lines = 0; cn1 = -1;
+    payer = null; adj2430 = null;
+    // Both arrays, not just the payers. emitLine replaces `adj` only when it
+    // actually emitted a row, so a claim with no service lines was handed the
+    // live array and then watched the *next* claim's SVDs push into it --
+    // reporting one claim's line adjudication against another's row, in the
+    // CSV export as much as on screen.
+    if (guide) { payers = []; adj = []; }
   };
 
   segments.forEach((seg, i) => {
     switch (seg.id) {
+      case "ST":
+        guide = guideOf(segments, i);
+        // Fresh arrays, or the first PACDR transaction in a mixed file would
+        // push its adjudication into the ones the rows before it still hold.
+        if (guide) { payers = []; adj = []; }
+        break;
       case "NM1": {
         const q = seg.elements[0];
         if (q === "85") ctx.billing = i;
         else if (q === "IL") ctx.subscriber = i;
         else if (q === "QC") ctx.patient = i;
-        else if (q === "PR") ctx.payer = i;
-        else if (q === "82") ctx.rendering = i;
+        else if (q === "PR") {
+          // A PACDR NM1*PR outside a claim is 2010BB, the agency the report
+          // goes to; inside one it is the 2330B of the 2320 still open, which
+          // is the payer that actually adjudicated it.
+          //
+          // A 2330B must not land in ctx.payer: that survives to the next
+          // claim in the same hierarchy, where it would attribute this
+          // claim's payer to one that named none of its own.
+          if (guide) {
+            if (clm === -1) ctx.payer = ctx.receiver = i;
+            else if (payer) payer.nm1 = i;
+          } else ctx.payer = i;
+        } else if (q === "82") ctx.rendering = i;
         break;
       }
+      // 2320 and 2430, the two loops PACDR exists to carry. The claim guard
+      // is what separates them from their 837P namesakes: the subscriber's
+      // own SBR sits in 2000B, outside any claim.
+      case "SBR":
+        if (guide && clm !== -1) {
+          payer = { sbr01: seg.elements[0], nm1: -1, amt: -1, dtp: -1 };
+          payers.push(payer);
+        }
+        break;
+      case "SVD":
+        if (guide && lx !== -1) {
+          adj2430 = { svd: i, cas: [], dtp: -1 };
+          adj.push(adj2430);
+        }
+        break;
+      case "CAS":
+        // Only ever the 2430 currently open, so a claim-level 2320 adjustment
+        // is never attributed to a service line.
+        if (guide && adj2430) adj2430.cas.push(i);
+        break;
+      case "AMT":
+        if (guide && payer && seg.elements[0] === "D") payer.amt = i;
+        break;
+      // Contract information exists at both the claim and the line; the
+      // claim's is the one reported, and lx says which one this is.
+      case "CN1":
+        if (guide && clm !== -1 && lx === -1) cn1 = i;
+        break;
       // A new hierarchical level closes whatever claim is open, and it has to
       // do that BEFORE this loop's own NM1 segments land in ctx. A claim's
       // last service line is not flushed until something closes the claim, so
@@ -4221,17 +4684,25 @@ function buildClaimIndex(segments) {
       case "LX":
         emitLine();
         lx = i;
+        payer = null; adj2430 = null;
         break;
       case "SV1": case "SV2": case "SV5":
         if (lx !== -1) sv = i;
         break;
       case "DTP":
         if (lx !== -1 && seg.elements[0] === "472") dtp = i;
+        // The paid date is reported per line and per payer, so it is read
+        // against whichever of the two is open.
+        else if (guide && seg.elements[0] === "573") {
+          if (adj2430) adj2430.dtp = i;
+          else if (payer) payer.dtp = i;
+        }
         break;
       case "SE":
         closeClaim();
         // A new transaction starts a fresh hierarchy: nothing above carries.
-        ctx.billing = ctx.subscriber = ctx.patient = ctx.payer = ctx.rendering = -1;
+        ctx.billing = ctx.subscriber = ctx.patient = ctx.payer = ctx.receiver = ctx.rendering = -1;
+        guide = "";
         break;
     }
   });
@@ -4293,6 +4764,24 @@ function posAt(row) {
   return name ? `${code} ${name}` : code;
 }
 
+// The payer a PACDR claim is about: the one SBR-01 calls primary, falling
+// back to the first reported. Never the first in document order as such --
+// a report may emit a secondary payer's 2320 ahead of the primary's, so
+// nothing here may key off position.
+function primaryPayer(row) {
+  return row.payers.find((p) => p.sbr01 === "P") || row.payers[0] || null;
+}
+
+// That payer's 2430 on this row's service line. SVD-01 carries the same
+// identifier as the payer's 2330B NM1-09, which is what ties a line's
+// adjudication to the payer that produced it when several report the line.
+function payerAdj(row, payer) {
+  if (!payer) return null;
+  const id = elAt(payer.nm1, 8);
+  if (!id) return null;
+  return row.adj.find((a) => elAt(a.svd, 0) === id) || null;
+}
+
 // One column spec drives both the table and the CSV export, so the two can
 // never drift apart.
 const CLAIM_COLUMNS = [
@@ -4307,9 +4796,95 @@ const CLAIM_COLUMNS = [
   { label: "Diagnoses",   get: (r) => diagnosesAt(r), cls: "cmono" },
   { label: "Place of service", get: (r) => posAt(r), cls: "cdim" },
   { label: "Billing provider", get: (r) => nameAt(r.billing) },
-  { label: "Payer",       get: (r) => nameAt(r.payer) },
+  // Under PACDR the NM1*PR the other columns read -- 2010BB -- is the agency
+  // the report is sent to, which has paid nothing. The payer worth naming is
+  // the 2330B inside the claim; 2010BB gets its own column below.
+  //
+  // Deliberately no fallback to that NM1*PR for a PACDR claim carrying no
+  // 2320: naming the data receiver as the payer is worse than naming nobody,
+  // and blank is the honest answer for a claim nothing has adjudicated.
+  { label: "Payer",       get: (r) => (r.guide ? nameAt2330B(r) : nameAt(r.payer)) },
   { label: "Claim total", get: (r) => elAt(r.clm, 1), cls: "cnum" },
 ];
+
+function nameAt2330B(row) {
+  const payer = primaryPayer(row);
+  return payer ? nameAt(payer.nm1) : "";
+}
+
+/* Post-adjudicated reporting, 005010X298. Appended to the columns above --
+ * never substituted for them -- and only for a file that carries a PACDR
+ * transaction, since on an 837P they would be eight empty columns.
+ *
+ * Every one of these is a payer amount, a code or an organisation name, so
+ * none is flagged `phi`: masking them would hide the adjudication a PACDR
+ * file exists to report while protecting nobody.
+ */
+const PACDR_CLAIM_COLUMNS = [
+  { label: "Claim paid", get: (r) => {
+      const payer = primaryPayer(r);
+      return payer ? elAt(payer.amt, 1) : "";
+    }, cls: "cnum" },
+  { label: "Line paid", get: (r) => {
+      const a = payerAdj(r, primaryPayer(r));
+      return a ? elAt(a.svd, 1) : "";
+    }, cls: "cnum" },
+  { label: "Line adjustments", get: (r) => {
+      const a = payerAdj(r, primaryPayer(r));
+      if (!a || !a.cas.length) return "";
+      const amounts = casAmounts(a);
+      // One unreadable amount makes the total unknowable. Showing a figure
+      // that quietly leaves it out would be a wrong number rather than a
+      // missing one; the Checks tab reports the value itself.
+      if (amounts.some((x) => x.cents === null)) return "";
+      return centsToAmount(amounts.reduce((n, x) => n + x.cents, 0));
+    }, cls: "cnum" },
+  { label: "Adjustment codes", get: (r) => {
+      const a = payerAdj(r, primaryPayer(r));
+      return a ? casAmounts(a).map((x) => `${x.group}-${x.reason}`).join(" ") : "";
+    }, cls: "cmono" },
+  { label: "Paid date", get: (r) => {
+      const payer = primaryPayer(r);
+      const a = payerAdj(r, payer);
+      // The line's own remittance date if it carries one, otherwise the
+      // claim-level date on the payer's 2330B.
+      const at = a && a.dtp !== -1 ? a.dtp : (payer ? payer.dtp : -1);
+      return date8(elAt(at, 2));
+    }, cls: "cmono" },
+  { label: "Payers", get: (r) => String(r.payers.length), cls: "cnum" },
+  { label: "Data receiver", get: (r) => nameAt(r.receiver) },
+  // Raw and undecoded on purpose: CN1-04 is a free-form contract code, and
+  // the one-letter dispositions some submitters overload it with are that
+  // recipient's convention, not something X298 defines.
+  { label: "Contract code (CN1-04)", get: (r) => elAt(r.cn1, 3), cls: "cmono" },
+];
+
+// The adjustments inside one 2430, as group, reason and integer cents. CAS
+// repeats within the segment: element 0 is the group code and each triple
+// after it is a reason, an amount and a quantity.
+//
+// `cents` is null for an amount that is not a number, which the caller has to
+// tell apart from zero -- an unreadable adjustment that counted as nothing
+// would silently understate the total it belongs to. The reason code beside
+// it is still readable and still worth showing.
+function casAmounts(adj) {
+  const out = [];
+  for (const idx of adj.cas) {
+    const el = state.doc.segments[idx].elements;
+    for (let at = 1; at + 1 < el.length; at += 3) {
+      if (!el[at] && !el[at + 1]) continue;
+      out.push({ group: el[0] || "", reason: el[at] || "", cents: toCents(el[at + 1] || "") });
+    }
+  }
+  return out;
+}
+
+// The claim table's columns for `rows`: today's, plus the adjudication ones
+// when the file carries a PACDR transaction. Both the table and the CSV read
+// through this, which is what keeps one spec driving both.
+function claimColumns(rows) {
+  return rows.some((r) => r.guide) ? CLAIM_COLUMNS.concat(PACDR_CLAIM_COLUMNS) : CLAIM_COLUMNS;
+}
 
 // Rendering is capped for the same reason the changes list is: a 30,000-row
 // table is slower to paint than it is useful to read. Export is complete.
@@ -4330,10 +4905,11 @@ function renderClaims() {
   const shown = rows.slice(0, MAX_RENDERED_CLAIM_ROWS);
   const claimCount = rows.length ? rows[rows.length - 1].claimNo : 0;
 
-  const head = CLAIM_COLUMNS.map((c) => `<th>${escapeHtml(c.label)}</th>`).join("");
+  const cols = claimColumns(rows);
+  const head = cols.map((c) => `<th>${escapeHtml(c.label)}</th>`).join("");
   const body = shown.map((r, i) => {
     const first = i === 0 || shown[i - 1].claimNo !== r.claimNo;
-    const cells = CLAIM_COLUMNS.map((c) => {
+    const cells = cols.map((c) => {
       const value = c.get(r);
       const masked = state.mask && c.phi && value;
       return `<td class="${c.cls || ""}${masked ? " masked" : ""}">${escapeHtml(masked ? maskText(value) : value)}</td>`;
@@ -4374,9 +4950,10 @@ function csvCell(value) {
 
 function exportClaimsCsv() {
   const rows = state.claims || [];
-  const lines = [CLAIM_COLUMNS.map((c) => csvCell(c.label)).join(",")];
+  const cols = claimColumns(rows);
+  const lines = [cols.map((c) => csvCell(c.label)).join(",")];
   for (const r of rows) {
-    lines.push(CLAIM_COLUMNS.map((c) => {
+    lines.push(cols.map((c) => {
       const value = c.get(r);
       return csvCell(state.mask && c.phi && value ? maskText(value) : value);
     }).join(","));
@@ -4401,11 +4978,20 @@ function renderChecks() {
   const errors = findings.filter((f) => f.level === "error").length;
 
   if (!findings.length) {
+    // The list is what was actually checked, so the adjudication sentence
+    // only appears for a file that carries adjudication to check.
+    const pacdr = hasPacdr(state.doc.segments)
+      ? `<p>In the post-adjudicated report, each payer's <code>AMT*D</code> matches the
+         <code>SVD-02</code> amounts on its own service lines, every <code>2430</code> accounts
+         for the line charge or for a patient responsibility left on that line, and every
+         <code>SVD-01</code> names a payer the claim identifies.</p>`
+      : "";
     $("paneChecks").innerHTML = `<div class="checks-ok">
       <p><b>No problems found.</b></p>
       <p>Control numbers and segment counts agree at every level
       (<code>SE</code>, <code>GE</code>, <code>IEA</code>), every envelope is closed, and each
       claim's <code>CLM-02</code> total matches the charges on its service lines.</p>
+      ${pacdr}
     </div>`;
     return;
   }
