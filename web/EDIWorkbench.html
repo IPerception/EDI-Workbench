@@ -1390,6 +1390,7 @@
       <div>
         <button class="btn link" id="sampleBtn" type="button">Load a sample 837P</button>
         <button class="btn link" id="samplePacdrBtn" type="button">&hellip;or a sample PACDR 837</button>
+        <button class="btn link" id="sample835Btn" type="button">&hellip;or a sample 835</button>
       </div>
     </section>
 
@@ -1560,7 +1561,7 @@
 <dialog class="guide" id="guideDialog" aria-labelledby="guideTitle">
   <div class="guide-head">
     <div>
-      <h2 id="guideTitle">Read an 837, or turn one into test data.</h2>
+      <h2 id="guideTitle">Read an 837 or an 835, or turn an 837 into test data.</h2>
       <p>Load an interchange and it is decoded, indexed and checked in this tab. Change it and you get a byte-faithful copy back &mdash; whitespace, delimiters, and every segment you didn't touch preserved exactly as they came in.</p>
     </div>
     <button class="guide-close" id="guideClose" type="button" aria-label="Close the guide">
@@ -1596,6 +1597,14 @@
     </section>
 
     <section>
+      <h3>835 remittance advice</h3>
+      <p><b>005010X221A1</b> is a different transaction from the 837, not a variant of it: a payer telling a provider what it paid, adjusted and why, rather than a provider submitting a claim. It is recognised from <code>ST-01</code>, which names the transaction set outright, so there is no guide-detection question the way PACDR has one.</p>
+      <p>Its loops replace the 837's rather than reusing them. <code>N1*PR</code> and <code>N1*PE</code> &mdash; not <code>NM1</code> &mdash; open the payer and payee. <code>LX</code> opens an optional grouping of claims (loop 2000), not a service line. <code>CLP</code> opens a claim (2100) and <code>SVC</code> a service line's payment (2110). <code>PLB</code>, provider-level balance, sits after every claim and before <code>SE</code> &mdash; a transaction-level adjustment, never inside one.</p>
+      <p>The Claims tab stays empty for an 835 by design: it flattens a provider's <em>submission</em> into one row per service line, and there is no submission here to flatten. Checks reads the payment instead &mdash; see below.</p>
+      <p class="hint caution">Reading only, in this version. Nothing here decodes a CARC or RARC reason code, and the Limited Data Set does not reach an 835's patient identifiers &mdash; <code>NM1*QC</code>/<code>NM1*IL</code> sit directly inside loop 2100, outside the loops that rule targets, so an 835 handed through Limited Data Set comes back byte-identical, not scrubbed.</p>
+    </section>
+
+    <section>
       <h3>What Checks looks at</h3>
       <p>Three kinds of problem, all of which are invisible until someone else rejects the file.</p>
       <dl>
@@ -1606,6 +1615,8 @@
         <dt>Post-adjudicated claims</dt>
         <dd>Only for a PACDR transaction, and all warnings rather than errors. Each payer's <code>2320 AMT*D</code> is compared against the <code>SVD-02</code> amounts on its own <code>2430</code>s &mdash; but only where that payer reported every line, since adjudicating at claim level alone is legal. Each <code>2430</code> has to account for something: its <code>SVD-02</code> plus its <code>CAS</code> adjustments must come to either the line charge or a patient responsibility another payer left on the same line. And every <code>SVD-01</code> must name a payer the claim identifies in a <code>2330B</code>.</dd>
         <dd>Deliberately a choice of two rather than a chain from payer to payer: two payers can each adjudicate the whole charge independently, and where the only adjustment is contractual there is no patient responsibility to chain from at all. What is checked is arithmetic and cross-referencing <em>inside</em> the file. Nothing here validates a file against a particular recipient's companion guide &mdash; contract codes, trading partner id formats, remark codes and which payer must appear are that recipient's policy, they differ between them, and encoding one would make the app wrong for everyone else.</dd>
+        <dt>835 balancing</dt>
+        <dd>Only for an 835, and all warnings. Per line, <code>SVC-02</code> minus its <code>CAS</code> adjustments should equal <code>SVC-03</code>. Per claim, <code>CLP-03</code> minus every <code>CAS</code> on it &mdash; claim-level and line-level together &mdash; should equal <code>CLP-04</code>. And once <code>BPR-03</code> states a credit, the total payment should equal every claim's <code>CLP-04</code> minus every <code>PLB-04</code> adjustment on the transaction &mdash; a <b>positive</b> <code>PLB-04</code> <em>reduces</em> what was paid. A reversed claim (<code>CLP-02 = 22</code>) balances under the same three rules; nothing here assumes a positive amount. A blank amount stands the relevant check down silently; one that is present but unreadable is reported on its own and stands it down as well.</dd>
       </dl>
       <p>Selecting a finding jumps to the segment it came from. Nothing here changes the file &mdash; but if a rule ever adds or removes a segment, the control counts are corrected automatically on the way out, since every count above the change would otherwise be wrong.</p>
     </section>
@@ -1661,6 +1672,10 @@
       <h4 class="ref-h">Loops</h4>
       <p class="ref-note">Each loop, the segment that opens it, and where it sits. Generated from the loop tables the Tree tab resolves against.</p>
       <div id="refLoops"></div>
+
+      <h4 class="ref-h">835 loops</h4>
+      <p class="ref-note">The remittance advice's own five loops, listed separately: several loop ids mean something different here than they do in an 837 above &mdash; <code>1000A</code> is the payer, not the submitter &mdash; so relabelling under an alternate name would misdescribe the relationship rather than clarify it.</p>
+      <div id="ref835Loops"></div>
 
       <h4 class="ref-h">Segments</h4>
       <p class="ref-note">What each segment id stands for. These are the names shown beside every row in the Document tab.</p>
@@ -2158,6 +2173,31 @@ function hasPacdr(segments) {
   return segments.some((seg, i) => seg.id === "ST" && guideOf(segments, i) === GUIDE_PACDR);
 }
 
+/* ---- 835 remittance advice --------------------------------------------
+ *
+ * 835 Health Care Claim Payment/Advice, 005010X221A1. Detection is
+ * unconditional: ST-01 names the transaction set outright ("835"), so there
+ * is no guide-detection problem the way PACDR has one. This is a different
+ * question from guideOf/GUIDE_PACDR -- "which 837 implementation guide" --
+ * and is deliberately not folded into that machinery.
+ *
+ * An 835 is a different transaction from the 837 the rest of this file is
+ * built around, not a variant of it: LX opens loop 2000 (an optional
+ * grouping of claims), not a service line; CLP/SVC/N1/PLB replace
+ * CLM/SV1/NM1's entity loops; and PLB sits at the transaction level, never
+ * inside a claim. So the 837 anchors are switched off for an 835 transaction
+ * and replaced, rather than added to -- see buildTree and validateDocument,
+ * both gated on this constant per ST, which is what lets a mixed
+ * interchange resolve each transaction correctly.
+ */
+const TXN_835 = "835";
+
+// True when any transaction in the file is an 835, for the parts of the UI
+// that only make sense once one is present.
+function has835(segments) {
+  return segments.some((seg) => seg.id === "ST" && seg.elements[0] === TXN_835);
+}
+
 // Read-only structural checks. Nothing here mutates the document; the
 // result is a list of findings for the UI to render.
 //
@@ -2297,6 +2337,88 @@ function validateDocument(doc) {
     claim = null;
   };
 
+  // 835 remittance advice, tracked only while a transaction identifies as
+  // one from ST-01. clp835 and svc835 hold the currently open claim and
+  // line while their CAS adjustments accumulate against them; PLB never
+  // opens either, since it is transaction-level and sits after every claim.
+  let txn835 = false, bpr02 = "", bpr03 = "", bprAt = -1;
+  let clp835 = null, svc835 = null;
+  let clpTotal = 0, clpTotalBad = false, plbTotal = 0, plbTotalBad = false, sawClp = false;
+
+  // Reads one 835 money element for the three checks below. "" is absent,
+  // which is situational and stands the check down without a warning; a
+  // value that is present but unreadable gets its own warning and stands
+  // the check down too -- absent is not the same fault as garbled, and
+  // toCents alone can't tell them apart, since it returns null for both.
+  const readAmount835 = (value, title, detail, at) => {
+    if (value === "") return null;
+    const cents = toCents(value);
+    if (cents === null) add("warning", title, detail, at);
+    return cents;
+  };
+
+  // 1. Line -- SVC-02 minus its CAS adjustments should equal SVC-03.
+  const closeSvc835 = () => {
+    if (!svc835) return;
+    const label = clp835 ? (clp835.id || "(no id)") : "(no claim)";
+    const charge = readAmount835(svc835.charge, "SVC-02 is not a number",
+      `SVC-02 for claim ${label} reads "${svc835.charge}".`, svc835.at);
+    const paid = readAmount835(svc835.paid, "SVC-03 is not a number",
+      `SVC-03 for claim ${label} reads "${svc835.paid}".`, svc835.at);
+    if (charge !== null && paid !== null && !svc835.casBad) {
+      const expected = charge - svc835.casSum;
+      if (expected !== paid) {
+        add("warning", "Line payment does not reconcile",
+          `SVC-02 minus its adjustments on claim ${label} is ${centsToAmount(expected)}, ` +
+          `but SVC-03 states ${centsToAmount(paid)}.`, svc835.at);
+      }
+    }
+    svc835 = null;
+  };
+
+  // 2. Claim -- CLP-03 minus every CAS on the claim, claim-level and line-
+  // level together, should equal CLP-04. Feeds clpTotal for the transaction
+  // check below; an unreadable CLP-04 poisons that sum rather than being
+  // silently dropped from it.
+  const closeClp835 = () => {
+    if (!clp835) return;
+    const label = clp835.id || "(no id)";
+    const charge = readAmount835(clp835.charge, "CLP-03 is not a number",
+      `CLP-03 on claim ${label} reads "${clp835.charge}".`, clp835.at);
+    const paid = readAmount835(clp835.statedPaid, "CLP-04 is not a number",
+      `CLP-04 on claim ${label} reads "${clp835.statedPaid}".`, clp835.at);
+    if (charge !== null && paid !== null && !clp835.casBad) {
+      const expected = charge - clp835.casSum;
+      if (expected !== paid) {
+        add("warning", "Claim payment does not reconcile",
+          `CLP-03 minus its adjustments on claim ${label} is ${centsToAmount(expected)}, ` +
+          `but CLP-04 states ${centsToAmount(paid)}.`, clp835.at);
+      }
+    }
+    if (paid === null) clpTotalBad = true;
+    else clpTotal += paid;
+    clp835 = null;
+  };
+
+  // 3. Transaction -- BPR-02 should equal every claim's CLP-04 minus every
+  // PLB-04 on the transaction. A *positive* PLB-04 *reduces* what was paid,
+  // not increases it -- it reads backwards, which is exactly why the next
+  // reader will "correct" it into a bug. docs/835-validation.md explains why
+  // the sign runs this way. Stands down unless BPR-03 states a credit and
+  // the transaction carries at least one claim; a debit or a zero-payment
+  // transaction is [?] and not asserted here.
+  const checkTransaction835 = () => {
+    if (bpr03 !== "C" || !sawClp || clpTotalBad || plbTotalBad) return;
+    const stated = readAmount835(bpr02, "BPR-02 is not a number", `BPR-02 reads "${bpr02}".`, bprAt);
+    if (stated === null) return;
+    const expected = clpTotal - plbTotal; // not clpTotal + plbTotal -- see above
+    if (expected !== stated) {
+      add("warning", "Total payment does not reconcile",
+        `BPR-02 states ${centsToAmount(stated)}, but every claim's CLP-04 minus every PLB-04 ` +
+        `on the transaction comes to ${centsToAmount(expected)}.`, bprAt);
+    }
+  };
+
   segments.forEach((seg, i) => {
     switch (seg.id) {
       case "ISA":
@@ -2314,6 +2436,10 @@ function validateDocument(doc) {
         st = { at: i, control: seg.elements[1] };
         setsInGroup++;
         guide = guideOf(segments, i);
+        txn835 = seg.elements[0] === TXN_835;
+        bpr02 = ""; bpr03 = ""; bprAt = -1;
+        clp835 = null; svc835 = null;
+        clpTotal = 0; clpTotalBad = false; plbTotal = 0; plbTotalBad = false; sawClp = false;
         break;
 
       case "CLM":
@@ -2372,6 +2498,11 @@ function validateDocument(doc) {
         break;
 
       case "LX":
+        // On an 835, LX opens loop 2000 (an optional grouping of claims),
+        // not a service line, and a new grouping closes whatever claim/line
+        // the previous one left open -- the same boundary CLP and PLB close
+        // on, just one level higher.
+        if (txn835) { closeSvc835(); closeClp835(); break; }
         // The line is opened here, by the segment that opens loop 2400,
         // rather than by the SV1 inside it. A line missing its SV1 still
         // holds 2430s, and those still name payers worth checking -- opening
@@ -2407,6 +2538,30 @@ function validateDocument(doc) {
         break;
 
       case "CAS":
+        // 835's claim/line adjustments: accumulates into whichever of
+        // clp835 or svc835 is currently open -- both, when a line is open,
+        // since the claim total needs every CAS the claim carries. Same
+        // triple-walk as the PACDR block below, reused rather than
+        // rewritten: CAS repeats identically in both formats.
+        if (txn835) {
+          if (clp835 || svc835) {
+            const el = seg.elements;
+            for (let at = 1; at + 1 < el.length; at += 3) {
+              if (!el[at] && !el[at + 1]) continue;
+              const cents = toCents(el[at + 1] || "");
+              if (cents === null) {
+                add("warning", "CAS amount is not a number",
+                  `CAS on claim ${clp835 ? (clp835.id || "(no id)") : "(no claim)"} reads "${el[at + 1] || ""}".`, i);
+                if (svc835) svc835.casBad = true;
+                if (clp835) clp835.casBad = true;
+                continue;
+              }
+              if (svc835) svc835.casSum += cents;
+              if (clp835) clp835.casSum += cents;
+            }
+          }
+          break;
+        }
         // Only the 2430 currently open, so a claim-level 2320 adjustment is
         // never counted against a service line. CAS repeats within itself:
         // one group code, then a reason/amount/quantity triple per repeat.
@@ -2431,11 +2586,54 @@ function validateDocument(doc) {
         }
         break;
 
+      /* 835 remittance advice. Nothing below records anything unless the
+         transaction identified as one from ST-01 -- BPR, CLP, SVC and PLB
+         are not 837 segments, so on an 837P or a PACDR report none of these
+         cases can match a real segment id at all. */
+      case "BPR":
+        if (txn835) { bpr02 = seg.elements[1] || ""; bpr03 = seg.elements[2] || ""; bprAt = i; }
+        break;
+
+      case "CLP":
+        if (!txn835) break;
+        closeSvc835();
+        closeClp835();
+        sawClp = true;
+        clp835 = { at: i, id: seg.elements[0] || "", charge: seg.elements[2] || "",
+          statedPaid: seg.elements[3] || "", casSum: 0, casBad: false };
+        break;
+
+      case "SVC":
+        if (!txn835) break;
+        closeSvc835();
+        svc835 = { at: i, charge: seg.elements[1] || "", paid: seg.elements[2] || "",
+          casSum: 0, casBad: false };
+        break;
+
+      case "PLB":
+        if (!txn835) break;
+        closeSvc835();
+        closeClp835();
+        // PLB01 provider id, PLB02 fiscal period end, then up to six
+        // repeating pairs of PLB03 (adjustment reason composite) and PLB04
+        // (amount) -- the amount sits at every odd position from 3 on.
+        for (let at = 3; at < seg.elements.length; at += 2) {
+          const raw = seg.elements[at] || "";
+          if (raw === "") continue;
+          const cents = readAmount835(raw, "PLB-04 is not a number",
+            `PLB-04 on provider ${seg.elements[0] || "(no id)"} reads "${raw}".`, i);
+          if (cents === null) plbTotalBad = true;
+          else plbTotal += cents;
+        }
+        break;
+
       case "SE": {
         closeClaim();
         closeAdjudication();
         inClaim = false;
         guide = "";
+        if (txn835) { closeSvc835(); closeClp835(); checkTransaction835(); }
+        txn835 = false;
         if (!st) { add("error", "SE with no matching ST", "A transaction trailer appeared before any header.", i); break; }
 
         const counted = i - st.at + 1; // ST through SE inclusive
@@ -2658,6 +2856,52 @@ const SAMPLE_PACDR = [
   "IEA*1*000000001~",
 ].join("\n") + "\n";
 
+// An 835 remittance advice, 005010X221A1: a payer telling a provider what it
+// paid on two service lines of one claim, plus a second claim carrying a
+// reversal (CLP-02 = 22) of an earlier payment -- amounts negative
+// throughout, balancing under the same three checks as any other claim. A
+// PLB closes the transaction, so BPR-02 is every CLP-04 minus it.
+//
+// Wholly invented, like every sample here, and kept byte-identical to
+// tests/fixtures/sample_835.edi -- lint.mjs compares the two.
+const SAMPLE_835 = [
+  "ISA*00*          *00*          *ZZ*PAYERID        *ZZ*PROVIDERID     *230101*1200*^*00501*000000001*0*T*:~",
+  "GS*HP*PAYERID*PROVIDERID*20230101*1200*1*X*005010X221A1~",
+  "ST*835*0001~",
+  "BPR*I*135*C*ACH*CCP*01*111000025*DA*987654321*1234567890**01*111000025*DA*555555555*20230105~",
+  "TRN*1*12345678901*1234567890~",
+  "DTM*405*20230103~",
+  "N1*PR*QUILLFEATHER HEALTH PLAN~",
+  "N3*100 PAYER WAY~",
+  "N4*ANYTOWN*CA*90210~",
+  "PER*BL*CLAIMS DEPT*TE*5551234567~",
+  "N1*PE*BILLING PROVIDER NAME*XX*1234567893~",
+  "N3*123 MAIN ST~",
+  "N4*ANYTOWN*CA*90210~",
+  "REF*TJ*123456789~",
+  "LX*1~",
+  "CLP*PATIENTACCTNUM*1*300*240*60*CI*QF98001234*11~",
+  "NM1*QC*1*NETHERFIELD*ORLANDO****MI*QF4820731~",
+  "NM1*82*1*RENDERINGLAST*RENDERINGFIRST****XX*1234567893~",
+  "DTM*232*20230101~",
+  "SVC*HC:99213*200*160**1~",
+  "DTM*472*20230101~",
+  "CAS*PR*2*40~",
+  "AMT*B6*200~",
+  "SVC*HC:87070*100*80**1~",
+  "DTM*472*20230101~",
+  "CAS*PR*2*20~",
+  "CLP*PATIENTACCTNUM*22*-100*-80*-20*CI*QF98001234*12~",
+  "NM1*QC*1*NETHERFIELD*ORLANDO****MI*QF4820731~",
+  "SVC*HC:99213*-100*-80**1~",
+  "DTM*472*20230101~",
+  "CAS*PR*2*-20~",
+  "PLB*1234567893*20231231*L6:12345*25~",
+  "SE*31*0001~",
+  "GE*1*1~",
+  "IEA*1*000000001~",
+].join("\n") + "\n";
+
 // Segment names for the 837 professional/institutional families. Anything
 // not listed still renders; it just shows without a plain-English name.
 const SEGMENT_NAMES = {
@@ -2675,6 +2919,14 @@ const SEGMENT_NAMES = {
   LIN: "Drug Identification", CTP: "Drug Pricing", PWK: "Paperwork", LQ: "Form Identification",
   SVD: "Service Line Adjudication", TOO: "Tooth Identification", CUR: "Currency",
   SE: "Transaction Set Trailer", GE: "Functional Group Trailer", IEA: "Interchange Control Trailer",
+  // 835 remittance advice. N1 is 835's own party segment, not NM1's -- see
+  // N1_LOOPS_835. DTM is the 835 counterpart of DTP; 837 uses DTP only.
+  BPR: "Financial Information", TRN: "Trace", N1: "Name",
+  CLP: "Claim Payment Information", SVC: "Service Payment Information",
+  PLB: "Provider Level Balance", TS3: "Provider Summary Information",
+  TS2: "Provider Supplemental Summary Information",
+  MIA: "Medicare Inpatient Adjudication", MOA: "Medicare Outpatient Adjudication",
+  DTM: "Date/Time Reference",
 };
 
 // Qualifier codes worth decoding inline: these are the ones that tell you
@@ -2706,6 +2958,20 @@ const QUALIFIERS = {
   } },
   SBR: { 0: { P: "Primary", S: "Secondary", T: "Tertiary" } },
   SV1: {},
+  // 835 remittance advice. Structural code lists only -- no CARC/RARC or
+  // PLB03 reason-code tables; those change quarterly and are a recipient's
+  // policy, not a fact about the transaction.
+  N1: { 0: { PR: "Payer", PE: "Payee" } },
+  CLP: { 1: {
+    "1": "Primary", "2": "Secondary", "3": "Tertiary", "4": "Denied",
+    "19": "Processed as primary, forwarded", "20": "Processed as secondary, forwarded",
+    "21": "Processed as tertiary, forwarded", "22": "Reversal of previous payment",
+    "23": "Not our claim, forwarded",
+  } },
+  DTM: { 0: {
+    "405": "Production date", "232": "Statement from", "233": "Statement to",
+    "050": "Received", "472": "Service date", "150": "Period start", "151": "Period end",
+  } },
 };
 
 // Composite elements: the ones where a single element packs several values
@@ -2764,6 +3030,20 @@ const COMPOSITES = {
     parts: ["Qualifier", "Procedure code", "Modifier", "Modifier", "Modifier", "Modifier", "Description"],
     codes: { 0: { HC: "HCPCS/CPT", HP: "HIPPS rate code", N4: "NDC (11-digit)" } },
   } },
+  // 835 SVC-01 (as submitted) and SVC-06 (as changed by the payer), same
+  // composite shape as SVD's -- reused rather than redefined.
+  SVC: {
+    0: {
+      label: "Procedure",
+      parts: ["Qualifier", "Procedure code", "Modifier", "Modifier", "Modifier", "Modifier", "Description"],
+      codes: { 0: { HC: "HCPCS/CPT", HP: "HIPPS rate code", N4: "NDC (11-digit)" } },
+    },
+    5: {
+      label: "Original procedure",
+      parts: ["Qualifier", "Procedure code", "Modifier", "Modifier", "Modifier", "Modifier", "Description"],
+      codes: { 0: { HC: "HCPCS/CPT", HP: "HIPPS rate code", N4: "NDC (11-digit)" } },
+    },
+  },
 };
 
 // The composite spec for one element, or null if that element isn't one.
@@ -2842,16 +3122,38 @@ function buildOutline(segments) {
   };
 
   let claimNo = 0;
+  let txn835 = false; // ST-01 == "835": LX means something else there, see below
+  let lx835 = false;  // whether this 835 opened a 2000 for its claims to sit in
   segments.forEach((seg, i) => {
     if (seg.id === "ST") {
       closeFrom(0, i);
       claimNo = 0;
+      txn835 = seg.elements[0] === TXN_835;
+      lx835 = false;
       push(0, `Transaction ${seg.elements[1] || ""}`.trim(), `ST*${seg.elements[0] || ""}`, i);
     } else if (seg.id === "CLM") {
       closeFrom(1, i);
       claimNo++;
       push(1, `Claim ${claimNo}`, seg.elements[0] || "", i);
+    } else if (seg.id === "CLP" && txn835) {
+      // 835's claims, so the rail can scope find & replace to one of them the
+      // way it can for an 837's. Depth mirrors buildTree: a 2100 nests inside
+      // an open 2000, but the no-LX remittance is legal and its claims sit
+      // directly under the transaction rather than indented under nothing.
+      const depth = lx835 ? 2 : 1;
+      closeFrom(depth, i);
+      claimNo++;
+      push(depth, `Claim ${claimNo}`, seg.elements[0] || "", i);
     } else if (seg.id === "LX") {
+      if (txn835) {
+        // 835's LX opens loop 2000, an optional grouping of claims directly
+        // under the transaction -- not a service line, so unlike the 837
+        // case below it belongs beside "Claim", not two levels under it.
+        closeFrom(1, i);
+        lx835 = true;
+        push(1, `Header number ${seg.elements[0] || ""}`.trim(), "", i);
+        return;
+      }
       closeFrom(2, i);
       push(2, `Line ${seg.elements[0] || ""}`.trim(), "", i);
     } else if (seg.id === "SE") {
@@ -2970,6 +3272,25 @@ const ANCHOR_LOOPS = {
  */
 const REPEATED_ANCHORS = { "2320": ANCHOR_LOOPS["2300"] };
 
+/* Loop identifiers, 835 Health Care Claim Payment/Advice, 005010X221A1.
+ *
+ * Deliberately kept out of ENTITY_LOOPS/ANCHOR_LOOPS: those are what
+ * enclosingLoop and the 837 anchored-loop lookup key off, and an 835 loop id
+ * never satisfying an 837 lookup is what makes the 837 fallback inert by
+ * construction (see buildTree). 835 uses N1, not NM1, for its two header
+ * parties -- everything on the 837 side keys on NM1, so no existing
+ * entity-loop code reaches these even by accident.
+ *
+ * CLP and SVC are context-free openers -- CLP is always 2100, SVC always
+ * 2110 -- so unlike the 837 side there is no qualifier to resolve against an
+ * enclosing loop, and a flat table is enough.
+ */
+const N1_LOOPS_835 = { PR: ["1000A", "Payer"], PE: ["1000B", "Payee"] };
+const LOOPS_835 = {
+  CLP: ["2100", "Claim payment information"],
+  SVC: ["2110", "Service payment information"],
+};
+
 // The loop a segment is currently sitting in, which decides what its own
 // loop id would be. Entity loops are skipped: 2010BA is somewhere a segment
 // can be, but it never qualifies another entity.
@@ -3010,6 +3331,7 @@ function buildTree(segments) {
   let hlById = new Map(); // HL-01 -> the stack entry it opened, within one transaction
   let claimNo = 0;
   let guide = "";         // resolved per transaction, since one file can mix them
+  let txn = "";           // TXN_835 or "", also resolved per transaction
 
   segments.forEach((seg, i) => {
     const el = seg.elements;
@@ -3028,6 +3350,7 @@ function buildTree(segments) {
         hlById = new Map(); // HL ids are only unique within a transaction
         claimNo = 0;
         guide = guideOf(segments, i);
+        txn = el[0] === TXN_835 ? TXN_835 : "";
         // The detail line only grows when a guide was recognised, so an
         // ordinary 837P transaction still reads as just its set identifier.
         const node = open(GROUP_RANK.ST, i, seg, `Transaction ${el[1] || ""}`.trim(),
@@ -3036,15 +3359,30 @@ function buildTree(segments) {
         return;
       }
       case "CLM":
+        // 835 carries no CLM at all; explicit rather than relying on that.
+        if (txn === TXN_835) break;
         closeTo(GROUP_RANK.CLM);
         claimNo++;
         open(GROUP_RANK.CLM, i, seg, `Claim ${claimNo}`, el[0] || "", "2300");
         return;
       case "LX":
+        if (txn === TXN_835) {
+          // 2000 Header Number: an optional grouping of claims directly
+          // under the transaction, not a service line -- 835's own LX opens
+          // no line at all. HL_RANK, not GROUP_RANK.LX, so a claim (2100)
+          // still nests beneath it: GROUP_RANK.CLM > HL_RANK.
+          closeTo(HL_RANK);
+          open(HL_RANK, i, seg, `Header number ${el[0] || ""}`.trim(), "", "2000");
+          return;
+        }
         closeTo(GROUP_RANK.LX);
         open(GROUP_RANK.LX, i, seg, `Line ${el[0] || ""}`.trim(), "", "2400");
         return;
       case "NM1": {
+        // 835's NM1 (2100's QC/82/TT/PR/...) opens no loop of its own --
+        // flat segments only, per the probe: an unrelated qualifier must not
+        // reuse an 837 entity loop it happens to share a code with.
+        if (txn === TXN_835) break;
         // A new entity closes the previous one, whether or not this NM1
         // turns out to name a loop the guide recognises.
         closeTo(ENTITY_RANK);
@@ -3056,7 +3394,49 @@ function buildTree(segments) {
         }
         break; // an unrecognised qualifier is just a segment
       }
+      case "N1": {
+        // 1000A payer / 1000B payee. They close each other, hence the same
+        // entity rank NM1's 837 entity loops use -- an 835 never opens both
+        // from this case, so there is no ordering to get wrong.
+        if (txn !== TXN_835) break;
+        closeTo(ENTITY_RANK);
+        const loop = N1_LOOPS_835[el[0]];
+        if (loop) {
+          open(ENTITY_RANK, i, seg, loop[1], "", loop[0]);
+          return;
+        }
+        break; // an unrecognised qualifier is just a segment, as for NM1
+      }
+      case "CLP": {
+        // 2100 Claim payment information. Context-free: CLP always opens
+        // 2100, whether or not an LX (2000) is open above it -- the legal
+        // no-LX shape.
+        if (txn !== TXN_835) break;
+        closeTo(GROUP_RANK.CLM);
+        const loop = LOOPS_835.CLP;
+        open(GROUP_RANK.CLM, i, seg, loop[1], el[0] || "", loop[0]);
+        return;
+      }
+      case "SVC": {
+        // 2110 Service payment information. The next SVC closes the
+        // previous one, same as an 837 service line closing its sibling.
+        if (txn !== TXN_835) break;
+        closeTo(GROUP_RANK.LX);
+        const loop = LOOPS_835.SVC;
+        open(GROUP_RANK.LX, i, seg, loop[1], "", loop[0]);
+        return;
+      }
+      case "PLB":
+        // Transaction-level, never inside a claim: pops all the way back to
+        // whatever HL_RANK closes, which lands PLB as a leaf of ST directly
+        // -- it opens no loop of its own.
+        if (txn !== TXN_835) break;
+        closeTo(HL_RANK);
+        top().node.children.push(leaf(i, seg));
+        return;
       case "HL": {
+        // 835 carries no HL at all; explicit rather than relying on that.
+        if (txn === TXN_835) break;
         // An HL naming a parent nests inside it. One with no parent, or with
         // a pointer to an HL that was never opened -- which the Checks tab
         // reports on its own -- starts a fresh hierarchy under the transaction.
@@ -3085,14 +3465,19 @@ function buildTree(segments) {
 
     // Loops anchored by something other than an NM1: the other-subscriber
     // block inside a claim, and the drug, adjudication and form loops inside
-    // a service line.
-    const enclosing = enclosingLoop(stack);
-    const anchors = ANCHOR_LOOPS[enclosing] || REPEATED_ANCHORS[enclosing];
-    const anchored = anchors ? anchors[seg.id] : null;
-    if (anchored) {
-      closeTo(anchored[2]);
-      open(anchored[2], i, seg, loopLabel(guide, anchored[0], anchored[1]), "", anchored[0]);
-      return;
+    // a service line. 835 loop ids are not keys of ANCHOR_LOOPS/
+    // REPEATED_ANCHORS, so this stays inert for an 835 transaction even
+    // without the guard below -- explicit anyway, so an 835 LQ can never
+    // fabricate loop 2440 even if that inertness is disturbed later.
+    if (txn !== TXN_835) {
+      const enclosing = enclosingLoop(stack);
+      const anchors = ANCHOR_LOOPS[enclosing] || REPEATED_ANCHORS[enclosing];
+      const anchored = anchors ? anchors[seg.id] : null;
+      if (anchored) {
+        closeTo(anchored[2]);
+        open(anchored[2], i, seg, loopLabel(guide, anchored[0], anchored[1]), "", anchored[0]);
+        return;
+      }
     }
 
     top().node.children.push(leaf(i, seg));
@@ -3623,6 +4008,22 @@ function referenceLoops() {
   return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
 }
 
+// The 835's five loops, listed flat rather than merged into referenceLoops():
+// loop ids collide across formats with different meanings -- 1000A is the
+// Submitter in 837, the Payer in 835 -- so relabelling the same loop under an
+// alternate name, what `alt` does for PACDR, is the wrong tool here. This is
+// a different set of loops that happen to share ids, not the same loop
+// renamed, so it gets its own flat table instead.
+function referenceLoops835() {
+  return [
+    { loop: "1000A", name: "Payer", opener: "N1*PR" },
+    { loop: "1000B", name: "Payee", opener: "N1*PE" },
+    { loop: "2000", name: "Header number", opener: "LX" },
+    { loop: "2100", name: "Claim payment information", opener: "CLP" },
+    { loop: "2110", name: "Service payment information", opener: "SVC" },
+  ];
+}
+
 function renderReference() {
   $("refLoops").innerHTML = referenceLoops().map(([parent, rows]) => `
     <div class="ref-group">
@@ -3639,6 +4040,16 @@ function renderReference() {
         </tr>`).join("")}</tbody>
       </table>
     </div>`).join("");
+
+  $("ref835Loops").innerHTML = `<div class="ref-group">
+    <table class="ref-table">
+      <tbody>${referenceLoops835().map((r) => `<tr>
+        <td class="ref-loop">${escapeHtml(r.loop)}</td>
+        <td class="ref-open"><code>${escapeHtml(r.opener)}</code></td>
+        <td class="ref-name">${escapeHtml(r.name)}</td>
+      </tr>`).join("")}</tbody>
+    </table>
+  </div>`;
 
   const segments = Object.entries(SEGMENT_NAMES).sort((a, b) => a[0].localeCompare(b[0]));
   $("refSegments").innerHTML = `<table class="ref-table">
@@ -3756,6 +4167,7 @@ fileInput.addEventListener("change", () => {
 });
 $("sampleBtn").addEventListener("click", () => loadFile("sample_837p.edi", SAMPLE_837P));
 $("samplePacdrBtn").addEventListener("click", () => loadFile("sample_837_pacdr.edi", SAMPLE_PACDR));
+$("sample835Btn").addEventListener("click", () => loadFile("sample_835.edi", SAMPLE_835));
 
 function loadFile(name, raw) {
   state.fileName = name;
@@ -4307,11 +4719,17 @@ function renderTreeRows() {
 // Loop ids grouped by what they describe, so the column reads as four bands
 // -- header parties, hierarchy, claim, service line -- rather than nineteen
 // unrelated numbers. Reuses the existing themed accents; no new tokens.
+//
+// 835's 1000A/1000B and 2000 already land in the right band, by luck rather
+// than design: the prefixes below were written for 837's own 1000A/1000B
+// (submitter/receiver) and 2000A/2000B/2000C (HL hierarchy), and 835's
+// payer/payee and header-number loops happen to share those same prefixes.
 function loopTint(loop) {
   if (!loop) return "";
   if (loop.startsWith("1000")) return " lp-head";
   if (loop.startsWith("2000") || loop.startsWith("2010")) return " lp-hier";
-  if (loop.startsWith("23")) return " lp-claim";
+  if (loop === "2110") return " lp-line";  // 835 service payment information
+  if (loop.startsWith("23") || loop.startsWith("21")) return " lp-claim"; // 837 2300s, 835 2100
   if (loop.startsWith("24")) return " lp-line";
   return "";
 }
@@ -4986,11 +5404,23 @@ function renderChecks() {
          for the line charge or for a patient responsibility left on that line, and every
          <code>SVD-01</code> names a payer the claim identifies.</p>`
       : "";
+    // Same rule for a remittance. The claim-balance sentence below is driven
+    // by CLM, which an 835 does not carry, so naming it on a file with no CLM
+    // in it would report a check that never ran.
+    const remit = has835(state.doc.segments)
+      ? `<p>In the remittance advice, each service line's <code>SVC-03</code> payment
+         reconciles against its own adjustments, each claim's <code>CLP-04</code> does the
+         same across the claim, and <code>BPR-02</code> equals every claim's payment minus
+         every provider-level balance adjustment.</p>`
+      : "";
+    const claimTotals = state.doc.segments.some((s) => s.id === "CLM")
+      ? `, and each claim's <code>CLM-02</code> total matches the charges on its service lines`
+      : "";
     $("paneChecks").innerHTML = `<div class="checks-ok">
       <p><b>No problems found.</b></p>
       <p>Control numbers and segment counts agree at every level
-      (<code>SE</code>, <code>GE</code>, <code>IEA</code>), every envelope is closed, and each
-      claim's <code>CLM-02</code> total matches the charges on its service lines.</p>
+      (<code>SE</code>, <code>GE</code>, <code>IEA</code>), every envelope is closed${claimTotals}.</p>
+      ${remit}
       ${pacdr}
     </div>`;
     return;

@@ -2,7 +2,7 @@
 // which lives in the UI half of the file and so isn't covered by parity.mjs.
 import { readFileSync } from "node:fs";
 
-import { APP, FIXTURE } from "./paths.mjs";
+import { APP, FIXTURE, X221_FIXTURE } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -18,11 +18,20 @@ function lift(name, opener) {
   throw new Error("unbalanced: " + name);
 }
 
+// Scalar consts have no braces to match on, so take the declaration up to
+// its semicolon -- these carry trailing comments, so the line doesn't end there.
+function liftLine(name) {
+  const m = html.match(new RegExp("^const " + name + " = [^\\n]*?;", "m"));
+  if (!m) throw new Error("not found: " + name);
+  return m[0];
+}
+
 const src = [
   lift("SEGMENT_NAMES", "const SEGMENT_NAMES = {") + ";",
   lift("QUALIFIERS", "const QUALIFIERS = {") + ";",
   lift("COMPOSITES", "const COMPOSITES = {") + ";",
   lift("compositeSpec", "function compositeSpec(segId, index)"),
+  liftLine("TXN_835"),
   lift("buildOutline", "function buildOutline(segments)"),
   lift("claimStarts", "function claimStarts(outline)"),
   lift("segmentRole", "function segmentRole(seg)"),
@@ -37,7 +46,7 @@ const src = [
   // componentHtml reads the live document off `state`; the app builds that
   // at load time, so the harness supplies one it can point at a fixture.
   "const state = { doc: null };",
-  "export { buildOutline, claimStarts, segmentRole, parse, SEGMENT_NAMES, COMPOSITES, compositeSpec, componentHtml, versionLabel, state };",
+  "export { buildOutline, claimStarts, segmentRole, parse, SEGMENT_NAMES, COMPOSITES, compositeSpec, componentHtml, versionLabel, state, TXN_835 };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -170,6 +179,36 @@ check("5010 code", m.versionLabel("00501"), "5010");
 check("4010 code", m.versionLabel("00401"), "4010");
 check("unrecognised code shown raw", m.versionLabel("00301"), "00301");
 check("missing code", m.versionLabel(""), "unknown");
+
+console.log("\n[10] 835 remittance advice");
+const x221Raw = readFileSync(X221_FIXTURE, "utf8");
+const x221Doc = m.parse(x221Raw);
+// The cheapest complete test of the inspector naming step: every segment id
+// the fixture carries has a plain-English name, the same assertion the 837P
+// fixture gets above.
+check("names cover the 835 sample's segments",
+  [...new Set(x221Doc.segments.map((s) => s.id))].filter((id) => !m.SEGMENT_NAMES[id]), []);
+// Step 10: the outline used to repeat the Tree tab's LX fabrication --
+// pushing "Line 1" for a segment that opens loop 2000, a grouping of claims,
+// not a service line.
+const x221Outline = m.buildOutline(x221Doc.segments);
+check("LX reads as a header number, not a line",
+  x221Outline.map((n) => n.label),
+  ["Transaction 0001", "Header number 1", "Claim 1", "Claim 2"]);
+// The rail is also the find & replace scoping control, so an 835's claims
+// have to be selectable there and not just resolvable in the tree.
+check("an 835's claims nest inside the header grouping",
+  x221Outline.map((n) => n.depth), [0, 1, 2, 2]);
+check("each claim carries its patient control number",
+  x221Outline.filter((n) => n.label.startsWith("Claim")).map((n) => n.detail),
+  ["PATIENTACCTNUM", "PATIENTACCTNUM"]);
+// The no-LX remittance is legal -- validateDocument supports it -- and its
+// claims have nothing to indent under, so they sit at the transaction's own
+// level rather than under an absent 2000.
+const noLx = m.buildOutline(m.parse(x221Raw.replace("LX*1~\n", "")).segments);
+check("a remittance with no LX still lists its claims, one level up",
+  noLx.map((n) => [n.label, n.depth]),
+  [["Transaction 0001", 0], ["Claim 1", 1], ["Claim 2", 1]]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
