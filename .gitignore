@@ -31,6 +31,11 @@ web/tests/_check.js
 docs/notes/
 .notes/
 
+# Editors — local IDE state, not project configuration. JetBrains writes .idea/
+# into any project it opens, and the module and VCS mapping files inside name
+# this machine's paths, so they are wrong for anyone else who clones.
+.idea/
+
 # OS
 Thumbs.db
 desktop.ini
