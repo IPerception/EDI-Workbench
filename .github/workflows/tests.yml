@@ -1,0 +1,48 @@
+# Runs both test suites on every pull request, so a change is answerable before
+# it reaches main rather than after it is already on the live demo. Until now
+# the only evidence a branch passed was whoever opened it saying so.
+#
+# Free on this repo: Actions bills private repositories, and this one is public.
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push supersedes the run it interrupted. Nothing here deploys or
+# publishes, so an abandoned run has no result worth waiting for -- unlike the
+# Pages workflow, which lets its deploy finish.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Both toolchains in one job, deliberately: parity.mjs shells out to
+      # `python` to regenerate its reference output from edi_engine and compare
+      # the JavaScript engine against it byte for byte. Splitting them would
+      # leave the suite that stops the port drifting unable to run at all.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      # No install step and no dependency cache anywhere below: neither suite
+      # has a dependency to install. That is the property worth keeping rather
+      # than a gap to paper over, and it is why these steps are one line each.
+      - name: Browser app — 8 suites
+        run: node web/tests/all.mjs
+
+      - name: Python prototype
+        run: python -m unittest
