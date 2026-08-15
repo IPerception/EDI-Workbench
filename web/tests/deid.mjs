@@ -14,7 +14,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { APP, SAMPLES_DIR } from "./paths.mjs";
+import { APP, PACDR_FIXTURE, SAMPLES_DIR } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -58,9 +58,15 @@ const src = [
   liftLine("ENTITY_RANK"),
   lift("HL_LOOPS", "const HL_LOOPS = {") + ";",
   lift("ENTITY_LOOPS", "const ENTITY_LOOPS = {") + ";",
+  // buildTree resolves loop labels through the guide override, so the table
+  // and its accessor come with it. GUIDE_PACDR and guideOf are already in the
+  // engine block above.
+  lift("GUIDE_LOOP_LABELS", "const GUIDE_LOOP_LABELS = {") + ";",
+  lift("loopLabel", "function loopLabel(guide, loop, name)"),
   lift("ANCHOR_LOOPS", "const ANCHOR_LOOPS = {") + ";",
   lift("SEGMENT_NAMES", "const SEGMENT_NAMES = {") + ";",
   lift("QUALIFIERS", "const QUALIFIERS = {") + ";",
+  liftLine("REPEATED_ANCHORS"),
   lift("enclosingLoop", "function enclosingLoop(stack)"),
   lift("segmentRole", "function segmentRole(seg)"),
   lift("buildTree", "function buildTree(segments)"),
@@ -436,7 +442,53 @@ check("so the real name genuinely survives somewhere in the output",
 console.log("\n[14] the loops the rule targets");
 check("exactly the three patient-side name loops", [...m.PERSON_LOOPS].sort(), ["2010BA", "2010CA", "2330A"]);
 
-console.log("\n[15] the committed manual-test samples");
+console.log("\n[15] a post-adjudicated report");
+// PACDR needs no code here, and this is what asserts that: the patient loops
+// it carries are the ones the rule already targets, and everything the report
+// exists to convey is a payer's, not a patient's. Both halves matter -- an
+// over-eager rule would scramble the adjudication and destroy the file's
+// value as test data.
+const pacdr = runDeid(23, readFileSync(PACDR_FIXTURE, "utf8"));
+const pacdrIl = allOf(pacdr.after, "NM1", (s) => s.elements[0] === "IL");
+check("the 2330A subscriber is rewritten along with the 2010BA one",
+  pacdrIl.every((e) => e[2] !== "NETHERFIELD"), true);
+check("and all three appearances are still one person",
+  new Set(pacdrIl.map((e) => e[2] + "|" + e[3] + "|" + e[8])).size, 1);
+check("the member id is replaced but keeps its shape",
+  [pacdrIl[0][8] !== "QF4820731", pacdrIl[0][8].replace(/[A-Z]/g, "A").replace(/\d/g, "9")],
+  [true, "AA9999999"]);
+check("the 2330A street address is replaced",
+  pacdr.after[pacdr.before.findIndex((s, i) => s.id === "N3" && i > 25)].elements[0] !==
+  "456 ELM ST", true);
+// The payer side is not patient information and must come out untouched, or
+// the report no longer reconciles.
+check("every payer name and id is byte-identical",
+  allOf(pacdr.after, "NM1", (s) => s.elements[0] === "PR"),
+  allOf(pacdr.before, "NM1", (s) => s.elements[0] === "PR"));
+check("line adjudication is byte-identical", allOf(pacdr.after, "SVD"), allOf(pacdr.before, "SVD"));
+check("payer paid amounts are byte-identical", allOf(pacdr.after, "AMT"), allOf(pacdr.before, "AMT"));
+check("line adjustments are byte-identical", allOf(pacdr.after, "CAS"), allOf(pacdr.before, "CAS"));
+// REF*F8 is the payer's own claim control number, not a patient identifier,
+// and a report whose control numbers no longer resolve is not usable.
+check("payer claim control numbers (REF*F8) are byte-identical",
+  allOf(pacdr.after, "REF", (s) => s.elements[0] === "F8"),
+  allOf(pacdr.before, "REF", (s) => s.elements[0] === "F8"));
+check("the contract code is byte-identical",
+  allOf(pacdr.after, "CN1"), allOf(pacdr.before, "CN1"));
+// Paid dates have to move with the claim they belong to, or the report's
+// internal sequencing -- service date to paid date -- comes apart.
+const paidBefore = allOf(pacdr.before, "DTP", (s) => s.elements[0] === "573");
+const paidAfter = allOf(pacdr.after, "DTP", (s) => s.elements[0] === "573");
+const serviceBefore = allOf(pacdr.before, "DTP", (s) => s.elements[0] === "472");
+const serviceAfter = allOf(pacdr.after, "DTP", (s) => s.elements[0] === "472");
+check("every paid date moved", paidAfter.every((e, i) => e[2] !== paidBefore[i][2]), true);
+check("by the same offset as the claim's service dates",
+  new Set(paidAfter.map((e, i) => days(paidBefore[i][2], e[2]))
+    .concat(serviceAfter.map((e, i) => days(serviceBefore[i][2], e[2])))).size, 1);
+check("the report still validates after the run",
+  m.validateDocument(pacdr.doc).map((f) => f.title), []);
+
+console.log("\n[16] the committed manual-test samples");
 // These are what someone runs the Limited Data Set on by hand, so they have to be
 // worth clicking: clean before the run, and still clean after it. A file that
 // starts reporting findings once de-identified would send whoever is testing

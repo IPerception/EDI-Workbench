@@ -20,6 +20,17 @@ web/tests/_check.js
 *_lds_*.edi
 *_deidentified_*.edi
 
+# Working notes for in-flight work — plans, extracted specs, and source material
+# read while designing a feature. Kept in the repo so they survive a session and
+# sit next to the code they describe, but not committed: they are scratch. The
+# rest of docs/ IS tracked, and anything in here worth keeping gets promoted out
+# of notes/ into it.
+#
+# Source material also has to stay out for its own reasons: the X12 companion
+# guides under docs/notes/*-sources/ are third-party PDFs read as reference.
+docs/notes/
+.notes/
+
 # OS
 Thumbs.db
 desktop.ini

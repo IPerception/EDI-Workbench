@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { APP, TESTS_DIR, appVersion } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE, TESTS_DIR, appVersion } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 let problems = 0;
@@ -137,6 +137,21 @@ try {
   else ok(`app states one version, v${v}`);
 } catch (e) {
   bad(e.message);
+}
+
+/* --- 10. each embedded sample is its committed fixture -------------- */
+// The sample buttons ship a copy of each fixture inside the HTML, so the two
+// can drift silently -- and every other suite asserts against the file on
+// disk, so a button that loads something else makes all of them meaningless.
+// The declarations are evaluated rather than pattern-matched, which is what
+// makes this compare the string the button actually hands to loadFile.
+for (const [name, path] of [["SAMPLE_837P", FIXTURE], ["SAMPLE_PACDR", PACDR_FIXTURE]]) {
+  const decl = html.match(new RegExp(`^const ${name} = \\[[\\s\\S]*?^\\]\\.join\\("\\\\n"\\) \\+ "\\\\n";$`, "m"));
+  if (!decl) { bad(`${name} is not declared as an array of segments joined with newlines`); continue; }
+  const embedded = new Function(`${decl[0]}\nreturn ${name};`)();
+  const committed = readFileSync(path, "utf8");
+  if (embedded !== committed) bad(`${name} differs from ${path}`);
+  else ok(`${name} is byte-identical to its committed fixture (${committed.length} bytes)`);
 }
 
 console.log(problems ? `\n${problems} problem(s)` : "\nclean");

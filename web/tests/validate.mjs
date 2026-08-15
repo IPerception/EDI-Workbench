@@ -5,7 +5,7 @@
 // claim, and the failure is invisible locally.
 import { readFileSync } from "node:fs";
 
-import { APP, FIXTURE } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 const start = html.indexOf("/* ---- document ---");
@@ -139,6 +139,149 @@ console.log("\n[9] a run leaves the counts valid");
 const out = m.processText(raw, []);
 check("no repair was needed", out.countsRepaired, 0);
 check("output still validates", m.validateDocument(m.parse(out.output)), []);
+
+console.log("\n[10] post-adjudicated reporting (005010X298)");
+// The three checks a PACDR file adds, and -- just as important -- the two
+// shapes that must NOT be reported.
+const pacdr = readFileSync(PACDR_FIXTURE, "utf8");
+check("the PACDR fixture is clean", m.validateDocument(m.parse(pacdr)), []);
+check("a payer's claim total that disagrees with its own lines is caught",
+  titles(pacdr.replace("AMT*D*240~", "AMT*D*250~")),
+  ["Payer paid amount does not match its service lines"]);
+check("the detail names both totals",
+  m.validateDocument(m.parse(pacdr.replace("AMT*D*240~", "AMT*D*250~")))[0].detail,
+  "AMT*D for payer QFHP0001 on claim PATIENTACCTNUM states 250.00, " +
+  "but its 2 line adjudications add up to 240.00.");
+check("an unreadable payer amount is a warning of its own",
+  titles(pacdr.replace("AMT*D*45~", "AMT*D*ABC~")), ["Payer paid amount is not a number"]);
+// A payer with no 2430 on some line adjudicated at claim level only, which is
+// legal -- so the sum check has to stand down rather than report a shortfall.
+check("a payer that did not report every line is not measured against them",
+  titles(pacdr.replace("SVD*LBP0002*15*HC:87070**1~\nCAS*PR*2*5~\nDTP*573*D8*20230225~", "")
+              .replace("SE*55*0001~", "SE*52*0001~")), []);
+check("a line adjudication naming an unknown payer is caught",
+  titles(pacdr.replace("SVD*LBP0002*30*", "SVD*NOSUCH01*30*")),
+  ["Line adjudication names a payer the claim does not identify"]);
+check("the detail lists the payers the claim does identify",
+  m.validateDocument(m.parse(pacdr.replace("SVD*LBP0002*30*", "SVD*NOSUCH01*30*")))[0].detail,
+  `SVD-01 on claim PATIENTACCTNUM is "NOSUCH01", which matches no 2330B payer id ` +
+  "on this claim (QFHP0001, LBP0002).");
+// Changing one adjustment breaks both 2430s on that line: the first no longer
+// makes up the line charge, and the second no longer matches the patient
+// responsibility the first left behind.
+check("a line that no longer reconciles is caught",
+  titles(pacdr.replace("CAS*PR*2*40~", "CAS*PR*2*35~")),
+  ["Line adjudication does not reconcile", "Line adjudication does not reconcile"]);
+check("the detail names the total, the charge, and what else it was measured against",
+  m.validateDocument(m.parse(pacdr.replace("CAS*PR*2*40~", "CAS*PR*2*35~")))[0].detail,
+  "SVD for payer QFHP0001 on claim PATIENTACCTNUM pays 160.00 and adjusts 35.00, " +
+  "totalling 195.00, which is neither the line charge of 200.00 nor a patient " +
+  "responsibility on the line (10.00).");
+check("everything PACDR reports is a warning, never an error",
+  levels(pacdr.replace("AMT*D*240~", "AMT*D*250~").replace("SVD*LBP0002*30*", "SVD*NOSUCH01*30*")),
+  ["warning", "warning"]);
+
+// Regression, and the reason the line rule is a choice of two rather than a
+// chain from payer to payer. Both payers here adjudicate the whole charge
+// independently, and the only adjustment is contractual -- so there is no
+// patient responsibility to chain from, and a chained rule computes an
+// expected 0 for the second payer and reports a valid file.
+const independent = pacdr
+  .replace("SVD*QFHP0001*160*HC:99213**1~\nCAS*PR*2*40~", "SVD*QFHP0001*0*HC:99213**1~\nCAS*CO*45*200~")
+  .replace("SVD*LBP0002*30*HC:99213**1~\nCAS*PR*2*10~", "SVD*LBP0002*200*HC:99213**1~")
+  .replace("AMT*D*240~", "AMT*D*80~")
+  .replace("AMT*D*45~", "AMT*D*215~")
+  .replace("SE*55*0001~", "SE*54*0001~");
+check("two payers each adjudicating the full charge is not a discrepancy",
+  titles(independent), []);
+
+// The other half of "detected -> do more": these segments are legal in an
+// ordinary 837P, where nothing about them should be looked at.
+check("2430s in a file that is not a PACDR report are not checked",
+  titles(raw
+    .replace("DTP*472*D8*20230101~\nLX*2~",
+      "DTP*472*D8*20230101~\nSVD*987654321*10*HC:99213**1~\nCAS*PR*2*1~\nLX*2~")
+    .replace("SE*27*0001~", "SE*29*0001~")), []);
+
+console.log("\n[11] amounts a PACDR file states but cannot be read");
+// CAS used to be the only money field in the file that failed silently: an
+// unreadable amount was dropped from the total it belonged to, and the
+// shortfall then surfaced as a reconciliation failure somewhere else.
+const badCas = pacdr.replace("CAS*PR*2*40~", "CAS*PR*2*XX~");
+check("an unreadable adjustment is reported on its own", titles(badCas),
+  ["Line adjustment amount is not a number"]);
+check("the detail names the value and the claim",
+  m.validateDocument(m.parse(badCas))[0].detail,
+  `CAS on claim PATIENTACCTNUM reads "XX".`);
+check("it points at the CAS segment",
+  m.parse(badCas).segments[m.validateDocument(m.parse(badCas))[0].segment].id, "CAS");
+// The whole line stands down, not just that 2430. Payers on a line are
+// measured against each other's totals, so a partial one fails a payer that
+// balances -- here LBP0002, whose 40.00 is exactly what QFHP0001 left behind.
+check("and no payer on that line is measured against a partial total",
+  m.validateDocument(m.parse(badCas)).filter((f) => f.title.startsWith("Line adjudication")), []);
+// Per line, though: the rest of the claim is still checked.
+check("a different line is still reconciled",
+  titles(badCas.replace("CAS*PR*2*20~", "CAS*PR*2*15~")),
+  ["Line adjustment amount is not a number",
+   "Line adjudication does not reconcile", "Line adjudication does not reconcile"]);
+check("a claim-level 2320 CAS is still not read as a line's",
+  titles(pacdr.replace("AMT*D*240~", "AMT*D*240~\nCAS*CO*45*XX~").replace("SE*55*0001~", "SE*56*0001~")), []);
+
+// SVD-02 was the last money field in the file that failed silently, and the
+// consequential one: both adjudication checks stand down on a paid amount
+// they cannot read, so the file reported clean while the summary went on
+// claiming it had compared the very figure nothing ever read.
+const badSvd = pacdr.replace("SVD*QFHP0001*160*", "SVD*QFHP0001*ABC*");
+check("an unreadable paid amount is reported on its own", titles(badSvd),
+  ["Line paid amount is not a number"]);
+check("the detail names the payer, the claim and the value",
+  m.validateDocument(m.parse(badSvd))[0].detail,
+  `SVD-02 for payer QFHP0001 on claim PATIENTACCTNUM reads "ABC".`);
+check("it points at the SVD segment",
+  m.parse(badSvd).segments[m.validateDocument(m.parse(badSvd))[0].segment].id, "SVD");
+// Unlike CAS this does not stand the whole line down: the patient
+// responsibility a sibling payer is measured against comes from CAS, not
+// from SVD-02, so it is still sound and LBP0002 is still answerable for it.
+check("a sibling payer on the same line is still reconciled",
+  titles(badSvd.replace("CAS*PR*2*40~", "CAS*PR*2*35~")),
+  ["Line paid amount is not a number", "Line adjudication does not reconcile"]);
+
+console.log("\n[12] a service line whose charge never arrives");
+// The line record is opened by LX rather than by SV1, so a line missing its
+// SV1 still holds its 2430s. Before that it held none, and an unknown payer
+// on such a line went unreported entirely.
+const noCharge = pacdr
+  .replace("LX*2~\nSV1*HC:87070*100*UN*1***1~\nDTP*472*D8*20230101~\n", "LX*2~")
+  .replace("CLM*PATIENTACCTNUM*300*", "CLM*PATIENTACCTNUM*200*")
+  .replace("SE*55*0001~", "SE*53*0001~");
+check("the line charge disjunct is dropped rather than reported against",
+  m.validateDocument(m.parse(noCharge)).map((f) => f.detail),
+  ["SVD for payer QFHP0001 on claim PATIENTACCTNUM pays 80.00 and adjusts 20.00, " +
+   "totalling 100.00, which is not a patient responsibility on the line (5.00)."]);
+check("an unknown payer on that line is still caught",
+  titles(noCharge.replace("SVD*LBP0002*15*", "SVD*NOSUCH01*15*")).sort(),
+  ["Line adjudication does not reconcile",
+   "Line adjudication names a payer the claim does not identify"]);
+// With neither a charge nor a sibling to compare against there is nothing to
+// measure, so the check stands down rather than reporting against nothing.
+check("a lone adjudication on a chargeless line is not reported",
+  titles(noCharge.replace("SVD*LBP0002*15*HC:87070**1~\nCAS*PR*2*5~\nDTP*573*D8*20230225~", "")
+                 .replace("SE*53*0001~", "SE*50*0001~"))
+    .filter((t) => t === "Line adjudication does not reconcile"), []);
+// A line nobody adjudicated means the claim-total comparison has no complete
+// set to sum, so P1 stands down -- better than a confident wrong figure.
+check("a line no payer reported stands the claim-total check down",
+  titles(pacdr
+    .replace("SE*55*0001~", "LX*3~\nSV1*HC:36415*50*UN*1***1~\nDTP*472*D8*20230101~\nSE*58*0001~")
+    .replace("CLM*PATIENTACCTNUM*300*", "CLM*PATIENTACCTNUM*350*")), []);
+
+console.log("\n[13] a 2320 ends where its claim's service lines begin");
+// An AMT inside a service line is that line's, and used to overwrite the open
+// 2320's claim-level paid amount -- which then failed against its own lines.
+check("an AMT after LX does not overwrite the payer's claim-level amount",
+  titles(pacdr.replace("SVD*QFHP0001*160*HC:99213**1~", "AMT*D*999~\nSVD*QFHP0001*160*HC:99213**1~")
+              .replace("SE*55*0001~", "SE*56*0001~")), []);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
