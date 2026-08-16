@@ -16,6 +16,7 @@ const SUITES = [
   ["validate", "control counts, claim balance, and count repair"],
   ["deid", "patient de-identification, consistency, and date shifting"],
   ["virtual", "virtual list windowing arithmetic"],
+  ["render", "the load path, driven against a throwaway DOM"],
   ["lint", "single-file self-containment and markup"],
 ];
 
