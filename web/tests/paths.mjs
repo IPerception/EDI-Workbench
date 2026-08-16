@@ -17,6 +17,11 @@ export const FIXTURE = join(PROJECT, "tests", "fixtures", "sample_837p.edi");
 // variant of the one above: the 837P fixture is what parity and half the
 // assertions in every other suite are pinned to, and it has to stay put.
 export const PACDR_FIXTURE = join(PROJECT, "tests", "fixtures", "sample_837_pacdr.edi");
+// The 835 remittance advice, 005010X221A1. Own fixture, same reasoning as
+// PACDR_FIXTURE: the 837P fixture is what parity and half of every other
+// suite's assertions are pinned to, and an 835 is a different transaction
+// entirely, not a variant of it.
+export const X221_FIXTURE = join(PROJECT, "tests", "fixtures", "sample_835.edi");
 export const MAKE_REF = join(TESTS_DIR, "make_ref.py");
 
 // Committed manual-test samples. Generated, but kept in the repo so a UI

@@ -17,12 +17,14 @@ node web/tests/make_samples.mjs        # -> checks/
 node web/tests/make_tree_samples.mjs   # -> tree/
 node web/tests/make_deid_samples.mjs   # -> deid/
 node web/tests/make_pacdr_samples.mjs  # -> pacdr/
+node web/tests/make_835_samples.mjs    # -> 835/
 ```
 
-The clean baselines are `tests/fixtures/sample_837p.edi` and
-`tests/fixtures/sample_837_pacdr.edi`, which should report no problems in any
-tab. Both are also what the app's two sample buttons load — `lint.mjs` holds
-the embedded copies byte-identical to the files on disk.
+The clean baselines are `tests/fixtures/sample_837p.edi`,
+`tests/fixtures/sample_837_pacdr.edi` and `tests/fixtures/sample_835.edi`,
+which should report no problems in any tab. All three are also what the app's
+three sample buttons load — `lint.mjs` holds the embedded copies
+byte-identical to the files on disk.
 
 ## `checks/` — deliberately broken
 
@@ -95,3 +97,25 @@ All three findings are warnings rather than errors. What is checked is
 arithmetic inside the file, never conformance to a particular recipient's
 companion guide — those differ between recipients, so encoding one would make
 the app wrong for every other submitter.
+
+## `835/` — remittance advice (005010X221A1)
+
+A different transaction from the 837, not a variant of it: two service lines
+on one claim, a second claim carrying a reversal (`CLP-02 = 22`, amounts
+negative throughout), and a `PLB` closing the transaction. `N1*PR`/`N1*PE`
+open the payer and payee, `LX` opens an optional grouping of claims rather
+than a line, and `CLP`/`SVC` replace `CLM`/`SV1` — none of which the 837
+tables reach, by construction. The Claims tab stays empty for these files;
+Checks reads the payment instead.
+
+| File | What it exercises |
+| --- | --- |
+| `clean_remittance.edi` | The baseline, a copy of the fixture — nothing should be reported in any tab |
+| `line_does_not_reconcile.edi` | `SVC-02` minus its `CAS` adjustments does not equal `SVC-03` |
+| `claim_does_not_reconcile.edi` | `CLP-03` minus every `CAS` on the claim does not equal `CLP-04` — and, since `BPR-02` is computed *from* `CLP-04`, the transaction total is now wrong too. The one sample that trips two findings, both genuinely present |
+| `total_does_not_reconcile.edi` | `BPR-02` does not equal every claim's `CLP-04` minus every `PLB-04` |
+
+All three findings are warnings. The transaction check is the one worth
+reading closely if you're comparing numbers by hand: a **positive** `PLB-04`
+**reduces** what was paid, so it is `Σ CLP-04 − Σ PLB-04`, not `+`. See
+`docs/835-validation.md`.

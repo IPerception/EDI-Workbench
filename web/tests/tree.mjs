@@ -7,7 +7,7 @@
 // row per element rather than a taller card.
 import { readFileSync } from "node:fs";
 
-import { APP, FIXTURE, PACDR_FIXTURE } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE, X221_FIXTURE } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -50,6 +50,10 @@ const src = [
   lift("loopLabel", "function loopLabel(guide, loop, name)"),
   lift("ANCHOR_LOOPS", "const ANCHOR_LOOPS = {") + ";",
   liftLine("REPEATED_ANCHORS"),
+  liftLine("TXN_835"),
+  lift("has835", "function has835(segments)"),
+  liftLine("N1_LOOPS_835"),
+  lift("LOOPS_835", "const LOOPS_835 = {") + ";",
   lift("enclosingLoop", "function enclosingLoop(stack)"),
   lift("compositeSpec", "function compositeSpec(segId, index)"),
   lift("segmentRole", "function segmentRole(seg)"),
@@ -68,7 +72,8 @@ const src = [
   lift("LOOP_CONTEXTS", "const LOOP_CONTEXTS = [", "[", "]") + ";",
   lift("contextLabel", "function contextLabel(key)"),
   lift("referenceLoops", "function referenceLoops()"),
-  "export { buildTree, defaultExpanded, allGroupKeys, treeMatches, flattenTree, loopTint, parse, referenceLoops, contextLabel, LOOP_CONTEXTS, ROW_H, HL_RANK, HL_RANK_MAX, GROUP_RANK, guideOf, GUIDE_PACDR, GUIDE_LOOP_LABELS };",
+  lift("referenceLoops835", "function referenceLoops835()"),
+  "export { buildTree, defaultExpanded, allGroupKeys, treeMatches, flattenTree, loopTint, parse, referenceLoops, referenceLoops835, contextLabel, LOOP_CONTEXTS, ROW_H, HL_RANK, HL_RANK_MAX, GROUP_RANK, guideOf, GUIDE_PACDR, GUIDE_LOOP_LABELS, TXN_835, has835, N1_LOOPS_835, LOOPS_835 };",
 ].join("\n");
 
 const m = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
@@ -416,6 +421,15 @@ check("everything hanging off the service line",
   ["2400", "2410", "2420A", "2420H", "2430", "2440"].map(tint),
   ["lp-line", "lp-line", "lp-line", "lp-line", "lp-line", "lp-line"]);
 check("the envelope has no loop and so no tint", m.loopTint(""), "");
+// 835's own bands: 1000A/1000B and 2000 land right by sharing 837's
+// prefixes; 2100 and 2110 need their own rules, and 2110 has to be checked
+// before the "21" catch-all or it would tint as a claim instead of a line.
+check("835 header parties share 837's header-party band",
+  [tint("1000A"), tint("1000B")], ["lp-head", "lp-head"]);
+check("835's header-number grouping shares 837's hierarchy band",
+  tint("2000"), "lp-hier");
+check("835's claim and line get their own bands",
+  [tint("2100"), tint("2110")], ["lp-claim", "lp-line"]);
 // Every loop the builder can actually produce must land in a band, or it
 // renders in the default grey and looks like an oversight.
 const everyLoop = new Set();
@@ -540,6 +554,105 @@ console.log("\n[21] the row height the virtual list depends on");
 check("ROW_H is the fixed height every tree row is drawn at", m.ROW_H, 24);
 check("HL ranks sit between the transaction and the claim",
   m.HL_RANK > m.GROUP_RANK.ST && m.HL_RANK_MAX < m.GROUP_RANK.CLM, true);
+
+console.log("\n[22] 835 remittance advice loop resolution");
+// The 837 anchors are switched off for an 835, not merely unreached: this is
+// the finding that shaped the design, so it is pinned directly rather than
+// left to fall out of the 837 assertions above.
+const x221Raw = readFileSync(X221_FIXTURE, "utf8");
+const x221Doc = m.parse(x221Raw);
+const x221Root = m.buildTree(x221Doc.segments);
+const x221St = child(child(child(x221Root, "ISA"), "GS"), "ST");
+check("the transaction carries no PACDR guide -- 835 is not a 'which 837 guide' question",
+  x221St.guide, "");
+check("its detail is just the set identifier", x221St.detail, "835");
+
+const parties = groups(x221St).filter((g) => g.id === "N1");
+check("N1*PR and N1*PE open 1000A and 1000B, not an NM1 entity loop",
+  parties.map((g) => [g.loop, g.label]), [["1000A", "Payer"], ["1000B", "Payee"]]);
+
+const header = child(x221St, "LX");
+check("LX opens loop 2000, a header-number grouping of claims -- not a line",
+  [header.loop, header.label], ["2000", "Header number 1"]);
+
+const claims835 = groups(header).filter((g) => g.id === "CLP");
+check("two claims resolve as siblings under the header grouping",
+  claims835.map((g) => g.loop), ["2100", "2100"]);
+check("the reversal is the same claim id as the original, just a second CLP",
+  claims835.map((g) => g.detail), ["PATIENTACCTNUM", "PATIENTACCTNUM"]);
+
+const lines1 = groups(claims835[0]).filter((g) => g.id === "SVC");
+check("claim 1's two service lines are siblings, not nested in each other",
+  lines1.map((g) => g.loop), ["2110", "2110"]);
+const lines2 = groups(claims835[1]).filter((g) => g.id === "SVC");
+check("the reversal claim keeps its own line", lines2.map((g) => g.loop), ["2110"]);
+
+check("NM1*82 (rendering provider) opens no group inside an 835 claim",
+  groups(claims835[0]).filter((g) => g.id === "NM1").length, 0);
+check("but the segment itself is still a leaf, not dropped",
+  leaves(claims835[0]).map((l) => x221Doc.segments[l.seg].id).includes("NM1"), true);
+
+// The every-segment-is-exactly-one-leaf invariant, asserted against an 835
+// as well as the 837P fixture in [2]. It is asserted here because the N1
+// case is the one place in the 835 path that can open a loop *or* not: an
+// unrecognised qualifier has to fall through to a plain leaf the way NM1's
+// does, and an early return there drops the segment from the tree and from
+// the interchange's own count without failing anything else.
+const everyLeafOnce = (raw) => {
+  const d = m.parse(raw);
+  const seen = [];
+  (function collect(node) {
+    if (node.kind === "segment") { seen.push(node.seg); return; }
+    (node.children || []).forEach(collect);
+  })(m.buildTree(d.segments));
+  return [seen.length, d.segments.length];
+};
+check("every segment in the 835 appears exactly once as a leaf",
+  everyLeafOnce(x221Raw), [x221Doc.segments.length, x221Doc.segments.length]);
+check("an N1 qualifier that opens no 835 loop is still kept as a segment",
+  everyLeafOnce(x221Raw.replace("N1*PE*BILLING PROVIDER NAME*XX*1234567893~", "N1*40*RECEIVER NAME~")),
+  [x221Doc.segments.length, x221Doc.segments.length]);
+check("and so is an N1 with no qualifier at all",
+  everyLeafOnce(x221Raw.replace("N1*PE*BILLING PROVIDER NAME*XX*1234567893~", "N1**RECEIVER NAME~")),
+  [x221Doc.segments.length, x221Doc.segments.length]);
+
+check("PLB is a direct leaf child of ST, never inside a claim",
+  leaves(x221St).map((l) => x221Doc.segments[l.seg].id).includes("PLB"), true);
+check("and it is not swallowed by the header grouping either",
+  leaves(header).map((l) => x221Doc.segments[l.seg].id).includes("PLB"), false);
+
+check("referenceLoops() is untouched by 835 -- no 21xx/2000/1000 rows creep in",
+  m.referenceLoops().flatMap(([, rows]) => rows).map((r) => r.loop)
+    .filter((l) => l === "2100" || l === "2110" || l === "2000"), []);
+
+console.log("\n[23] the 835's own five-row loop reference");
+check("referenceLoops835 lists exactly the five 835 loops",
+  m.referenceLoops835().map((r) => r.loop), ["1000A", "1000B", "2000", "2100", "2110"]);
+check("every row names the segment that opens it",
+  m.referenceLoops835().filter((r) => !r.opener || !r.name).length, 0);
+
+console.log("\n[24] a mixed 837P + 835 interchange resolves each correctly");
+// One ISA, two functional groups: an 835 transaction followed by the 837P
+// fixture's own. Built from segments rather than text, reusing each
+// fixture's own envelope pieces around a shared ISA/IEA pair.
+const mixedSegs = [
+  x221Doc.segments[0],                                       // ISA (835's)
+  ...x221Doc.segments.slice(1, -1),                          // GS..GE, the 835 transaction
+  ...doc.segments.slice(1, -1),                               // GS..GE, the 837P fixture
+  x221Doc.segments[x221Doc.segments.length - 1],              // IEA (835's)
+];
+const mixedRoot = m.buildTree(mixedSegs);
+const mixedGroups = groups(child(mixedRoot, "ISA")).filter((g) => g.id === "GS");
+check("both functional groups resolve", mixedGroups.length, 2);
+const mixedSt835 = child(mixedGroups[0], "ST");
+const mixedSt837 = child(mixedGroups[1], "ST");
+check("the 835 transaction still resolves its own loops",
+  groups(mixedSt835).filter((g) => g.id === "N1").map((g) => g.loop), ["1000A", "1000B"]);
+check("the 837P transaction beside it is completely unaffected",
+  groups(child(mixedSt837, "HL")).filter((g) => g.id === "NM1").map((g) => g.loop), ["2010AA"]);
+check("and its claim still resolves as 2300, not swept up by the 835's tables",
+  child(child(mixedSt837, "HL"), "HL") && groups(child(child(mixedSt837, "HL"), "HL"))
+    .filter((g) => g.id === "CLM").map((g) => g.loop), ["2300"]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

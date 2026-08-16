@@ -5,7 +5,7 @@
 // claim, and the failure is invisible locally.
 import { readFileSync } from "node:fs";
 
-import { APP, FIXTURE, PACDR_FIXTURE } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE, X221_FIXTURE } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 const start = html.indexOf("/* ---- document ---");
@@ -282,6 +282,105 @@ console.log("\n[13] a 2320 ends where its claim's service lines begin");
 check("an AMT after LX does not overwrite the payer's claim-level amount",
   titles(pacdr.replace("SVD*QFHP0001*160*HC:99213**1~", "AMT*D*999~\nSVD*QFHP0001*160*HC:99213**1~")
               .replace("SE*55*0001~", "SE*56*0001~")), []);
+
+console.log("\n[14] 835 remittance advice (005010X221A1)");
+// The three checks an 835 adds: line (SVC-02 - CAS = SVC-03), claim (CLP-03 -
+// every CAS on it = CLP-04), and transaction (BPR-02 = every CLP-04 - every
+// PLB-04) -- plus the two shapes that must NOT be reported, exactly as the
+// PACDR block above does for its own three.
+const x221 = readFileSync(X221_FIXTURE, "utf8");
+const titles835 = (text) => m.validateDocument(m.parse(text)).map((f) => f.title);
+
+check("the 835 fixture is clean, reversal claim included", titles835(x221), []);
+
+check("a mutated SVC-03 is caught",
+  titles835(x221.replace("SVC*HC:99213*200*160**1~", "SVC*HC:99213*200*150**1~")),
+  ["Line payment does not reconcile"]);
+check("the detail names the computed total and what was stated",
+  m.validateDocument(m.parse(x221.replace("SVC*HC:99213*200*160**1~", "SVC*HC:99213*200*150**1~")))[0].detail,
+  "SVC-02 minus its adjustments on claim PATIENTACCTNUM is 160.00, but SVC-03 states 150.00.");
+
+// A mutated CLP-04 is caught by the claim check directly, and by the
+// transaction check too -- BPR-02 is computed FROM CLP-04, so a claim that
+// misstates its own payment legitimately misstates the transaction's as
+// well. This is the one mutation that cascades; the other two below do not.
+check("a mutated CLP-04 is caught at both the claim and the transaction",
+  titles835(x221.replace("*300*240*60*CI*QF98001234*11~", "*300*250*60*CI*QF98001234*11~")),
+  ["Claim payment does not reconcile", "Total payment does not reconcile"]);
+
+check("a mutated BPR-02 is caught, and only there",
+  titles835(x221.replace("BPR*I*135*C*", "BPR*I*145*C*")),
+  ["Total payment does not reconcile"]);
+
+console.log("\n[15] the PLB sign convention: a positive PLB reduces the payment");
+// Raising PLB-04 by 10 (25 -> 35) must LOWER the expected total by 10, to
+// 125.00, not raise it to 195.00 -- the check is BPR-02 = every CLP-04 minus
+// every PLB-04, and the minus sign is the one line in this feature most
+// likely to be "corrected" into a "+". The detail text is the actual pin: a
+// flipped sign still produces a finding here, but names the wrong total.
+const raisedPlb = x221.replace("L6:12345*25~", "L6:12345*35~");
+check("a positive PLB reduces the payment", titles835(raisedPlb), ["Total payment does not reconcile"]);
+check("the detail shows the LOWER expected total, not a higher one",
+  m.validateDocument(m.parse(raisedPlb))[0].detail,
+  "BPR-02 states 135.00, but every claim's CLP-04 minus every PLB-04 on the transaction comes to 125.00.");
+
+console.log("\n[16] reversals balance under the same rules -- no CLP-02 gate");
+// The reversal (CLP-02 = 22) is checked exactly like any other claim: an
+// unbalanced CAS on it is caught the same way an unbalanced CAS on the
+// original claim would be, sign and all.
+check("breaking the reversal's own CAS is caught, same as any other claim",
+  titles835(x221.replace("CAS*PR*2*-20~", "CAS*PR*2*-15~")),
+  ["Line payment does not reconcile", "Claim payment does not reconcile"]);
+
+console.log("\n[17] claim-level-only: the claim check runs, the line check is silent");
+// Legal 835 shape: adjudication reported with no 2110 at all. Built as its
+// own small file rather than a mutation of the shared fixture, since it is
+// a different shape (no SVC anywhere) rather than a broken value.
+const claimLevelOnly = [
+  "ISA*00*          *00*          *ZZ*PAYERID        *ZZ*PROVIDERID     *230101*1200*^*00501*000000001*0*T*:",
+  "GS*HP*PAYERID*PROVIDERID*20230101*1200*1*X*005010X221A1",
+  "ST*835*0001",
+  "BPR*I*80*C*ACH*CCP*01*111000025*DA*987654321*1234567890**01*111000025*DA*555555555*20230105",
+  "N1*PR*PAYER",
+  "N1*PE*PROVIDER",
+  "CLP*ACCT1*1*100*80*20*CI*CTRL1*11",
+  "CAS*CO*45*20",
+  "SE*7*0001",
+  "GE*1*1",
+  "IEA*1*000000001",
+].join("~") + "~";
+check("a claim with no service lines validates cleanly", titles835(claimLevelOnly), []);
+check("but the claim check genuinely ran -- breaking its CAS is still caught",
+  titles835(claimLevelOnly.replace("CAS*CO*45*20", "CAS*CO*45*30")),
+  ["Claim payment does not reconcile"]);
+
+console.log("\n[18] the transaction check's stand-down gates");
+check("BPR-03 = D stands the transaction check down, even when nothing reconciles",
+  titles835(x221.replace("BPR*I*135*C*", "BPR*I*999*D*")), []);
+
+console.log("\n[19] non-numeric amounts get their own warning and stand the check down");
+check("a non-numeric SVC-02", titles835(x221.replace("SVC*HC:99213*200*160**1~", "SVC*HC:99213*ABC*160**1~")),
+  ["SVC-02 is not a number"]);
+check("the detail names the claim and the value",
+  m.validateDocument(m.parse(x221.replace("SVC*HC:99213*200*160**1~", "SVC*HC:99213*ABC*160**1~")))[0].detail,
+  `SVC-02 for claim PATIENTACCTNUM reads "ABC".`);
+check("a non-numeric CLP-03", titles835(x221.replace("*300*240*60*CI*QF98001234*11~", "*XYZ*240*60*CI*QF98001234*11~")),
+  ["CLP-03 is not a number"]);
+check("a non-numeric BPR-02", titles835(x221.replace("BPR*I*135*C*", "BPR*I*XYZ*C*")),
+  ["BPR-02 is not a number"]);
+check("a non-numeric CAS amount", titles835(x221.replace("CAS*PR*2*40~", "CAS*PR*2*XYZ~")),
+  ["CAS amount is not a number"]);
+
+console.log("\n[20] absent is not the same fault as garbled");
+// A blank amount is situational and stands the check down without a
+// warning -- contrast with [19] above, where the same field holding
+// something unreadable warns on its own.
+check("a blank SVC-03 stands the line check down silently",
+  titles835(x221.replace("SVC*HC:99213*200*160**1~", "SVC*HC:99213*200***1~")), []);
+
+console.log("\n[21] an 835's checks never fire on an 837P or a PACDR file");
+check("the 837P fixture carries none of the 835 titles", titles(raw), []);
+check("the PACDR fixture carries none of the 835 titles", titles(pacdr), []);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

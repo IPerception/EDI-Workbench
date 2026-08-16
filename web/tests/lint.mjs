@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { APP, FIXTURE, PACDR_FIXTURE, TESTS_DIR, appVersion } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE, X221_FIXTURE, TESTS_DIR, appVersion } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 let problems = 0;
@@ -145,7 +145,7 @@ try {
 // disk, so a button that loads something else makes all of them meaningless.
 // The declarations are evaluated rather than pattern-matched, which is what
 // makes this compare the string the button actually hands to loadFile.
-for (const [name, path] of [["SAMPLE_837P", FIXTURE], ["SAMPLE_PACDR", PACDR_FIXTURE]]) {
+for (const [name, path] of [["SAMPLE_837P", FIXTURE], ["SAMPLE_PACDR", PACDR_FIXTURE], ["SAMPLE_835", X221_FIXTURE]]) {
   const decl = html.match(new RegExp(`^const ${name} = \\[[\\s\\S]*?^\\]\\.join\\("\\\\n"\\) \\+ "\\\\n";$`, "m"));
   if (!decl) { bad(`${name} is not declared as an array of segments joined with newlines`); continue; }
   const embedded = new Function(`${decl[0]}\nreturn ${name};`)();

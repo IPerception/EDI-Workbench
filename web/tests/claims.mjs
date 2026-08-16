@@ -2,7 +2,7 @@
 // read through it, PHI masking, and CSV export quoting.
 import { readFileSync } from "node:fs";
 
-import { APP, FIXTURE, PACDR_FIXTURE } from "./paths.mjs";
+import { APP, FIXTURE, PACDR_FIXTURE, X221_FIXTURE } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -417,6 +417,22 @@ check("the 837P rows do not inherit the report's payers",
 check("nor its line adjudication",
   Object.fromEntries(m.claimColumns(both).slice(13, 16).map((c) => [c.label, c.get(both[2])])),
   { "Claim paid": "", "Line paid": "", "Line adjustments": "" });
+m.state.doc = doc;
+
+console.log("\n[15] an 835 produces no claim rows at all");
+// No code change was made for this -- audited, not assumed. emitLine
+// returns early on clm === -1, and an 835 never carries a CLM, so clm never
+// leaves -1 for the whole walk: CLP, SVC, N1 and PLB all match none of
+// buildClaimIndex's cases and are silently skipped.
+const x221Raw = readFileSync(X221_FIXTURE, "utf8");
+const x221Doc = m.parse(x221Raw);
+m.state.doc = x221Doc;
+const x221Rows = m.buildClaimIndex(x221Doc.segments);
+check("zero rows, not a throw", x221Rows.length, 0);
+check("the 837P header stays the 13 labels it has always had -- an 835 does not add columns",
+  m.claimColumns(x221Rows).map((c) => c.label),
+  ["Claim", "Patient", "Line", "Service date", "Procedure", "Modifiers", "Units",
+   "Charge", "Diagnoses", "Place of service", "Billing provider", "Payer", "Claim total"]);
 m.state.doc = doc;
 
 console.log(`\n${pass} passed, ${fail} failed`);

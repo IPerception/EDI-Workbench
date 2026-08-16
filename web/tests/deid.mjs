@@ -14,7 +14,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { APP, PACDR_FIXTURE, SAMPLES_DIR } from "./paths.mjs";
+import { APP, PACDR_FIXTURE, X221_FIXTURE, SAMPLES_DIR } from "./paths.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -67,6 +67,8 @@ const src = [
   lift("SEGMENT_NAMES", "const SEGMENT_NAMES = {") + ";",
   lift("QUALIFIERS", "const QUALIFIERS = {") + ";",
   liftLine("REPEATED_ANCHORS"),
+  liftLine("N1_LOOPS_835"),
+  lift("LOOPS_835", "const LOOPS_835 = {") + ";",
   lift("enclosingLoop", "function enclosingLoop(stack)"),
   lift("segmentRole", "function segmentRole(seg)"),
   lift("buildTree", "function buildTree(segments)"),
@@ -550,6 +552,19 @@ check("awkward_values: the RD8 range is still a range",
 // contract the service-date shift rule has kept since round 1.
 check("awkward_values: the impossible date is left alone",
   awkwardDtps.some((e) => e[2] === "20231301"), true);
+
+console.log("\n[17] an 835 remittance advice");
+// No code change was made for this -- audited, not assumed. The rule
+// reaches identifiers only through PERSON_LOOPS (2010BA, 2010CA, 2330A),
+// which buildTree resolves through NM1; an 835's NM1 (2100's QC/IL/82/...)
+// opens no loop at all, so scrubLoop never finds one of these to scrub, and
+// PERSON_LOOPS itself carries no 835 loop id to begin with.
+const x221Raw = readFileSync(X221_FIXTURE, "utf8");
+const x221 = runDeid(31, x221Raw);
+check("nothing was marked as changed", x221.result.marks, []);
+check("the output is byte-identical to the input", m.serialize(x221.doc), x221Raw);
+check("the fixture still validates cleanly after the run",
+  m.validateDocument(x221.doc).map((f) => f.title), []);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
