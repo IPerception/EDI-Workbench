@@ -75,7 +75,10 @@ check("a taller row means fewer rows cover the same fold",
 console.log("\n[3] the window stays small no matter how long the list is");
 const big = windowRange(-500000, VIEW, 60000);
 check("60,000 rows still render a bounded window", big.last - big.first <= Math.ceil(VIEW / rowH) + overscan * 2, true);
-check("window is far from the start when scrolled deep", big.first > 20000, true);
+// Derived from the scroll offset rather than written down: the point is that
+// the window tracks the fold, which is true at any row height.
+check("window is far from the start when scrolled deep",
+  big.first, Math.floor(500000 / rowH) - overscan);
 const atEnd = windowRange(-(60000 * rowH) + VIEW, VIEW, 60000);
 check("scrolled to the end, last row is included", atEnd.last, 60000);
 
@@ -83,6 +86,12 @@ console.log("\n[4] edge cases");
 check("empty list yields an empty window", windowRange(0, VIEW, 0), { first: 0, last: 0 });
 check("list shorter than the fold renders whole", windowRange(0, VIEW, 5), { first: 0, last: 5 });
 check("overscrolled above the list clamps to 0", windowRange(400, VIEW, 100).first, 0);
+// A short file loaded while the pane is still scrolled deep into a long one.
+// Unclamped this returned first 8325 against a total of 31, so the slice came
+// back empty and the pane rendered nothing at all.
+const past = windowRange(-200000, VIEW, 31);
+check("scrolled past a short list still yields a usable window", past.first < past.last, true);
+check("scrolled past a short list ends at the last row", past.last, 31);
 check("tiny viewport still renders overscan", windowRange(0, 0, 100).last, overscan * 2);
 
 console.log("\n[5] striping is positional, not :nth-child");

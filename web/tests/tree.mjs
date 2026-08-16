@@ -551,7 +551,12 @@ check("and the override table names only the loops that genuinely differ",
   Object.keys(m.GUIDE_LOOP_LABELS[m.GUIDE_PACDR]), ["2010BB", "2330B"]);
 
 console.log("\n[21] the row height the virtual list depends on");
-check("ROW_H is the fixed height every tree row is drawn at", m.ROW_H, 24);
+// Read from the stylesheet, not written down: the tree's concern is that every
+// row flattens to ONE height, not what that height happens to be. virtual.mjs
+// owns the ROW_H-agrees-with-CSS check; a literal here just breaks whenever the
+// type scale legitimately moves.
+check("ROW_H is the fixed height every tree row is drawn at",
+  m.ROW_H, +html.match(/\.row \{[\s\S]*?height: (\d+)px;/)[1]);
 check("HL ranks sit between the transaction and the claim",
   m.HL_RANK > m.GROUP_RANK.ST && m.HL_RANK_MAX < m.GROUP_RANK.CLM, true);
 

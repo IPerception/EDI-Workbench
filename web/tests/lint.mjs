@@ -84,7 +84,7 @@ const blocks = {
   'data-theme="light"': css.match(/:root\[data-theme="light"\] \{([\s\S]*?)\n  \}/),
 };
 const colorTokens = (body) =>
-  new Set([...body.matchAll(/(--[\w-]+):/g)].map((x) => x[1]).filter((t) => !t.startsWith("--step") && t !== "--mono" && t !== "--sans"));
+  new Set([...body.matchAll(/(--[\w-]+):/g)].map((x) => x[1]).filter((t) => !t.startsWith("--step") && !["--mono", "--sans", "--display"].includes(t)));
 const base = colorTokens(blocks[":root"][1]);
 for (const [name, match] of Object.entries(blocks)) {
   if (name === ":root") continue;
@@ -107,17 +107,22 @@ else if (!/max-height:/.test(outlineRule[1])) bad(".outline must cap its height,
 else if (!/overflow-y:\s*auto/.test(outlineRule[1])) bad(".outline caps its height but cannot scroll to its own bottom");
 else ok(".outline caps its height and scrolls itself");
 
-/* --- 8. the rail masthead stays pinned ------------------------------ */
-// The mask and theme toggles act on whatever is on screen at the time, so
-// they have to be reachable at any scroll position. They were inside the
-// scroll container until the rail was split, and reaching the mask button
-// meant scrolling the rules back up first. Two invariants keep that fixed:
-// the masthead sits outside .rail-body, and .rail-body is what scrolls.
-const railBody = markup.slice(markup.indexOf('class="rail-body"'), markup.indexOf("</aside>"));
-if (markup.indexOf('class="rail-body"') === -1) bad("no .rail-body found: the rail no longer splits head from body");
-else if (railBody.includes('class="masthead"')) bad("the masthead is inside .rail-body, so it scrolls out of reach");
-else if (!markup.includes('class="rail-head"')) bad("no .rail-head wrapper around the masthead");
-else ok("the masthead sits outside the rail's scroll container");
+/* --- 8. the mask and theme toggles stay reachable -------------------- */
+// They act on whatever is on screen at the time, so they have to be reachable
+// at any scroll position. They lived inside the rail's scroll container once,
+// and reaching the mask button meant scrolling the rules back up first; the
+// rail was split into a pinned head and a scrolling body to fix that. They now
+// sit in the page header instead, which is unconditionally reachable -- so the
+// invariant is no longer "outside .rail-body" but "outside the rail entirely".
+// Keep it asserted: this is a bug that has already happened once.
+const rail = markup.slice(markup.indexOf("<aside class=\"rail\""), markup.indexOf("</aside>"));
+const topbar = markup.slice(markup.indexOf('<header class="topbar"'), markup.indexOf("</header>"));
+if (!topbar) bad("no .topbar found: the masthead has nowhere pinned to live");
+else if (rail.includes('id="maskBtn"') || rail.includes('id="themeBtn"'))
+  bad("a toggle is back inside the rail, where it scrolls out of reach");
+else if (!topbar.includes('id="maskBtn"') || !topbar.includes('id="themeBtn"'))
+  bad("the mask or theme toggle is not in the page header");
+else ok("the mask and theme toggles sit in the pinned page header");
 
 const railBodyRule = css.match(/\.rail-body \{([\s\S]*?)\n  \}/);
 if (!railBodyRule) bad("no .rail-body rule found");

@@ -40,3 +40,10 @@ docs/notes/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Generated font CSS. web/embed-font.py writes web/fonts/face.css, and its
+# contents get pasted straight into the <style> block of EDIWorkbench.html --
+# so a committed copy is a second copy of bytes that already live in a tracked
+# file, free to drift from the one the app actually serves. The script and the
+# licence beside it ARE tracked; the intermediate is not.
+web/fonts/face.css
