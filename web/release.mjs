@@ -65,8 +65,11 @@ step(`${branch} matches origin/${branch}`);
 
 /* --- 4. the suites must pass ---------------------------------------- */
 try {
-  execFileSync(process.execPath, [join(TESTS_DIR, "all.mjs")], { encoding: "utf8" });
-  step("all 8 suites pass");
+  // Report what the runner says rather than a count written down here: it said
+  // "8" while there were nine, which is the same fault as any other number kept
+  // in a second place. all.mjs owns how many suites there are.
+  const out = execFileSync(process.execPath, [join(TESTS_DIR, "all.mjs")], { encoding: "utf8" });
+  step((out.match(/All \d+ suites passed/) || ["the suites pass"])[0]);
 } catch (e) {
   console.log(e.stdout || "");
   die("the test suites do not pass");
