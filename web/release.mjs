@@ -13,7 +13,7 @@
 // Needs `gh` authenticated. Notes are read from the tag message if you pass
 // --notes-file, otherwise GitHub generates them from the commit log.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APP, PROJECT, TESTS_DIR, appVersion } from "./tests/paths.mjs";
@@ -79,12 +79,25 @@ try {
 // Copied to a temp dir rather than renamed in place: the repo keeps one
 // unversioned EDIWorkbench.html, and only the download carries the version
 // in its name.
+//
+// Line endings are normalised to LF on the way out. .gitattributes puts every
+// text file in this repo on LF (`* text=auto`, with only *.edi and *.txt
+// exempt because there line endings are data), so LF is the canonical form --
+// it is what git stores and what the Pages demo serves. A Windows checkout has
+// CRLF in the working tree, and copying that verbatim shipped v1.1.0 as a
+// 297,077-byte download of a 290,824-byte file: same content, ~6 KB of carriage
+// returns, and bytes that matched neither the repo nor the demo nor what CI
+// tested.
 const staged = join(mkdtempSync(join(tmpdir(), "ediwb-")), asset);
-copyFileSync(APP, staged);
-if (!readFileSync(staged, "utf8").includes(`class="version">v${version}<`)) {
+const working = readFileSync(APP, "utf8");
+const normalised = working.split("\r\n").join("\n");
+writeFileSync(staged, normalised, "utf8");
+
+if (!normalised.includes(`class="version">v${version}<`)) {
   die("the staged asset does not state the version it is named for");
 }
-step(`staged ${asset} (${readFileSync(staged).length} bytes), version confirmed inside it`);
+const saved = Buffer.byteLength(working, "utf8") - Buffer.byteLength(normalised, "utf8");
+step(`staged ${asset} (${Buffer.byteLength(normalised, "utf8")} bytes${saved ? `, ${saved} CRLF bytes normalised away` : ""}), version confirmed inside it`);
 
 if (!publish) {
   console.log(`\nDry run only. Re-run with --publish to create ${tag}.`);
