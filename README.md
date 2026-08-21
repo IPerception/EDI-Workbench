@@ -78,7 +78,7 @@ service line — and a diagnosis composite expanded into its parts.](docs/images
 
 ![The Claims tab, showing two claims across three service lines as a table: claim number,
 patient, line, service date, procedure, units, charge, diagnoses, place of service,
-billing provider and payer.](docs/images/claims-tab.png)
+billing provider, payer and claim total.](docs/images/claims-tab.png)
 
 *The Claims tab, one row per service line. The subscriber's claim has two lines; the
 dependent's has one.*

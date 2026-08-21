@@ -547,7 +547,7 @@
   }
   .drop:hover, .drop.hot { border-color: var(--signal); background: var(--signal-wash); }
   .drop svg { width: 20px; height: 20px; color: var(--signal); }
-  .drop-main { font-weight: 600; }
+  .drop-main { font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
   .drop-sub { font-size: var(--step--1); color: var(--slate); }
 
   .loaded {
@@ -1731,7 +1731,7 @@
           <path d="M14 3v5h5" /><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2Z" />
           <path d="M12 11v6" /><path d="m9.5 13.5 2.5-2.5 2.5 2.5" />
         </svg>
-        <span class="drop-main">Drop a file or click to browse</span>
+        <span class="drop-main">Drop a file / click to browse</span>
         <span class="drop-sub">.edi &middot; .837 &middot; .txt &middot; .x12 &middot; .dat</span>
       </div>
       <input type="file" id="fileInput" accept=".edi,.837,.txt,.x12,.dat,text/plain" hidden />
@@ -1744,7 +1744,7 @@
       <div id="parseError" hidden></div>
 
       <div>
-        <button class="btn link" id="sampleToggle" type="button" aria-expanded="false" aria-controls="sampleList">Use sample</button>
+        <button class="btn link" id="sampleToggle" type="button" aria-expanded="false" aria-controls="sampleList">Load a sample</button>
         <!-- The design offers one sample because the app had one. It now has
              three, and "retain every feature" outranks matching the mock, so
              the three sit one click behind the single link rather than being
