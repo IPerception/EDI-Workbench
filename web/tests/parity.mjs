@@ -3,6 +3,7 @@
 import { readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { APP, FIXTURE, MAKE_REF, REF_DIR } from "./paths.mjs";
+import { auditMarks } from "./_marks.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -246,6 +247,54 @@ check("4010 file still round trips", serialize(parse(v4010)) === v4010, true);
 // A 5010 file is allowed to carry the 'U' placeholder too.
 check("5010 with a 'U' placeholder reports none",
   parse(raw.replace("*^*00501*", "*U*00501*")).repetitionSep, null);
+
+console.log("\n[13] the engine rules mark every change they make");
+// processText builds its change list from these marks now, instead of from a
+// clone of every segment taken before the rules ran. A change a rule makes
+// without marking it is invisible from here on -- the before-value is gone the
+// instant the rule overwrites it. See _marks.mjs.
+for (const [name, rule] of [
+  ["shift service dates", new Dtp472ServiceLineShiftRule(30)],
+  ["replace a whole element", new StringReplaceRule({ find: "ANYTOWN", replace: "METROPOLIS" })],
+  ["replace inside a component", new StringReplaceRule({ find: "99213", replace: "99214", mode: "component" })],
+]) {
+  const audit = auditMarks(parse, rule, raw);
+  check(`${name}: actually changes the fixture`, audit.changed.length > 0, true);
+  check(`${name}: no change goes unmarked`, audit.unmarked, []);
+}
+
+// The reason processText still runs sameSegment over the segments a rule
+// marked, rather than trusting the marks outright. StringReplaceRule counts a
+// match whether or not the replacement differs from it, so asking for
+// ANYTOWN -> ANYTOWN marks every hit and changes nothing. Without the
+// filter each one would surface in the Changes tab as a change with identical
+// before and after.
+const noop = auditMarks(parse, new StringReplaceRule({ find: "ANYTOWN", replace: "ANYTOWN" }), raw);
+check("a replacement equal to its match changes nothing", noop.changed, []);
+check("but the rule marks it anyway", noop.overclaimed.length > 0, true);
+check("and processText filters it back out",
+  processText(raw, [new StringReplaceRule({ find: "ANYTOWN", replace: "ANYTOWN" })]).changes, []);
+
+console.log("\n[14] two rules on one segment report what arrived, not what the second found");
+// The change list is assembled from per-rule copies now, and a second rule
+// touching an already-edited segment copies it with the first rule's edit
+// already in place. processText keeps the earliest copy. Get this wrong and
+// the Changes tab shows a before that never existed in the input file: here
+// it would claim 20230102, a value the shift rule invented moments earlier.
+const chained = processText(raw, [
+  new Dtp472ServiceLineShiftRule(1),                                    // 20230101 -> 20230102
+  new StringReplaceRule({ find: "20230102", replace: "19990101" }),     // -> 19990101
+]);
+const shiftedThenSwapped = chained.changes.filter((c) => c.before.id === "DTP");
+check("the service-line DTPs are listed once each, not twice", shiftedThenSwapped.length, 2);
+check("before is the value from the input file",
+  shiftedThenSwapped.map((c) => c.before.elements[2]), ["20230101", "20230101"]);
+check("after is the value both rules left behind",
+  shiftedThenSwapped.map((c) => c.after.elements[2]), ["19990101", "19990101"]);
+check("both rules are credited on the segment",
+  [...new Set(shiftedThenSwapped.flatMap((c) => c.kinds))].sort(), ["shift", "swap"]);
+check("the output agrees with the change list",
+  (chained.output.match(/DTP\*472\*D8\*19990101~/g) || []).length, 2);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

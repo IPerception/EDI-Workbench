@@ -15,6 +15,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { APP, PACDR_FIXTURE, X221_FIXTURE, SAMPLES_DIR } from "./paths.mjs";
+import { auditMarks } from "./_marks.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -565,6 +566,25 @@ check("nothing was marked as changed", x221.result.marks, []);
 check("the output is byte-identical to the input", m.serialize(x221.doc), x221Raw);
 check("the fixture still validates cleanly after the run",
   m.validateDocument(x221.doc).map((f) => f.title), []);
+
+console.log("\n[18] every rewrite is marked");
+// processText builds its change list from these marks now, rather than from a
+// clone of every segment taken before the rules ran, so a rewrite this rule
+// forgets to mark is a rewrite nothing downstream can report. That matters
+// more here than for the other two rules: the Changes tab is the only record
+// of what a Limited Data Set replaced, and the mapping is thrown away when the
+// run ends. See _marks.mjs.
+for (const [name, source] of [
+  ["the 837P fixture", RAW],
+  ["the PACDR fixture", readFileSync(PACDR_FIXTURE, "utf8")],
+]) {
+  const audit = auditMarks(m.parse, new m.DeidentifyRule(23), source);
+  check(`${name}: the rule changes it`, audit.changed.length > 0, true);
+  check(`${name}: no rewrite goes unmarked`, audit.unmarked, []);
+  // put() already refuses to mark a write that would not change the value, so
+  // unlike StringReplaceRule this rule should claim nothing it did not do.
+  check(`${name}: and none is claimed that did not happen`, audit.overclaimed, []);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
