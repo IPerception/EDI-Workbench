@@ -132,7 +132,7 @@ newlines parses as readily as `*` and `~`.
 | Path | What it is |
 | --- | --- |
 | `web/EDIWorkbench.html` | **The app.** Self-contained: markup, styles and engine in one file. |
-| `web/tests/` | Eight correctness suites, plus generators for the committed sample files. |
+| `web/tests/` | Nine correctness suites, plus generators for the committed sample files. |
 | `web/bench/` | Benchmark over synthetic interchanges up to 150 MB. |
 | `web/PERFORMANCE.md` | Measured limits and the ordered backlog for improving them. |
 | `docs/pacdr-validation.md` | What the post-adjudicated checks do, what they deliberately don't, and why. |
@@ -146,7 +146,7 @@ it byte for byte, which is what stops the port drifting from the original.
 ## Running the tests
 
 ```sh
-node web/tests/all.mjs     # browser app: 8 suites
+node web/tests/all.mjs     # browser app: 9 suites
 python -m unittest         # Python prototype
 ```
 
