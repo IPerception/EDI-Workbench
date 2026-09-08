@@ -3,6 +3,7 @@
 import { readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { APP, FIXTURE, MAKE_REF, REF_DIR } from "./paths.mjs";
+import { auditMarks } from "./_marks.mjs";
 
 const html = readFileSync(APP, "utf8");
 
@@ -246,6 +247,33 @@ check("4010 file still round trips", serialize(parse(v4010)) === v4010, true);
 // A 5010 file is allowed to carry the 'U' placeholder too.
 check("5010 with a 'U' placeholder reports none",
   parse(raw.replace("*^*00501*", "*U*00501*")).repetitionSep, null);
+
+console.log("\n[13] the engine rules mark every change they make");
+// processText builds its change list from these marks now, instead of from a
+// clone of every segment taken before the rules ran. A change a rule makes
+// without marking it is invisible from here on -- the before-value is gone the
+// instant the rule overwrites it. See _marks.mjs.
+for (const [name, rule] of [
+  ["shift service dates", new Dtp472ServiceLineShiftRule(30)],
+  ["replace a whole element", new StringReplaceRule({ find: "ANYTOWN", replace: "METROPOLIS" })],
+  ["replace inside a component", new StringReplaceRule({ find: "99213", replace: "99214", mode: "component" })],
+]) {
+  const audit = auditMarks(parse, rule, raw);
+  check(`${name}: actually changes the fixture`, audit.changed.length > 0, true);
+  check(`${name}: no change goes unmarked`, audit.unmarked, []);
+}
+
+// The reason processText still runs sameSegment over the segments a rule
+// marked, rather than trusting the marks outright. StringReplaceRule counts a
+// match whether or not the replacement differs from it, so asking for
+// ANYTOWN -> ANYTOWN marks every hit and changes nothing. Without the
+// filter each one would surface in the Changes tab as a change with identical
+// before and after.
+const noop = auditMarks(parse, new StringReplaceRule({ find: "ANYTOWN", replace: "ANYTOWN" }), raw);
+check("a replacement equal to its match changes nothing", noop.changed, []);
+check("but the rule marks it anyway", noop.overclaimed.length > 0, true);
+check("and processText filters it back out",
+  processText(raw, [new StringReplaceRule({ find: "ANYTOWN", replace: "ANYTOWN" })]).changes, []);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
