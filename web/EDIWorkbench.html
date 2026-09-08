@@ -2238,8 +2238,11 @@ class Dtp472ServiceLineShiftRule {
       const shifted = shiftDate8(value, this.days);
       if (shifted === null) return; // malformed date; skip rather than fail the file
 
+      // Copied before the write, not after: processText builds its change list
+      // from these marks, so this is the only record of the original date.
+      const before = { id: seg.id, elements: seg.elements.slice() };
       seg.elements[2] = shifted;
-      marks.push({ segment: i, elements: [2] });
+      marks.push({ segment: i, elements: [2], before });
     });
 
     return { segments: marks.length, occurrences: marks.length, marks };
@@ -2315,14 +2318,18 @@ class StringReplaceRule {
       if (this.segmentIds && !this.segmentIds.has(seg.id.toUpperCase())) return;
 
       const hits = [];
+      let before = null;
       seg.elements.forEach((value, j) => {
         const [next, count] = this.replaceIn(value);
         if (!count) return;
+        // On the first hit only, and before the write: one copy per changed
+        // segment is what replaced processText's clone of every segment.
+        if (!before) before = { id: seg.id, elements: seg.elements.slice() };
         seg.elements[j] = next;
         occurrences += count;
         hits.push(j);
       });
-      if (hits.length) marks.push({ segment: i, elements: hits });
+      if (hits.length) marks.push({ segment: i, elements: hits, before });
     });
 
     return { segments: marks.length, occurrences, marks };
@@ -2384,10 +2391,12 @@ function escapeRegExp(text) {
 
 /* ---- engine -------------------------------------------------------- */
 
-function snapshot(segments) {
-  return segments.map((seg) => ({ id: seg.id, elements: seg.elements.slice() }));
-}
-
+// There was a snapshot(segments) here that cloned every segment in the
+// document before the rules ran, so processText could diff against it
+// afterwards. It was a second full copy of the working set, built to find
+// changes the rules already report: each rule now copies a segment on its
+// first write to it and carries that copy in the mark. sameSegment survives
+// because the marks say what a rule touched, not what it managed to change.
 function sameSegment(a, b) {
   if (a.id !== b.id || a.elements.length !== b.elements.length) return false;
   return a.elements.every((v, i) => v === b.elements[i]);
@@ -2402,10 +2411,19 @@ function processText(raw, rules) {
     if (typeof rule.check === "function") rule.check(doc);
   }
 
-  const before = snapshot(doc.segments);
   const countBefore = doc.segments.length;
   const summary = [];
   const ruleKindsBySegment = new Map();
+  // Segment index -> the segment as it was before any rule touched it. Each
+  // rule copies a segment on its first write to it and carries that copy in
+  // the mark, so only segments that actually change are ever copied. This
+  // replaced a clone of the entire document taken up front, which on a large
+  // file was a second full working set built to find a handful of changes.
+  //
+  // First writer wins. Two rules can hit one segment, and the second one's
+  // copy has the first one's edit already in it -- the change list has to
+  // show what arrived, not what the second rule happened to find.
+  const beforeBySegment = new Map();
 
   for (const rule of rules) {
     const result = rule.apply(doc.segments);
@@ -2417,6 +2435,9 @@ function processText(raw, rules) {
       occurrences: result.occurrences,
     });
     for (const mark of result.marks) {
+      if (mark.before && !beforeBySegment.has(mark.segment)) {
+        beforeBySegment.set(mark.segment, mark.before);
+      }
       let entry = ruleKindsBySegment.get(mark.segment);
       if (!entry) { entry = { kinds: [], elements: new Map() }; ruleKindsBySegment.set(mark.segment, entry); }
       if (!entry.kinds.includes(rule.kind)) entry.kinds.push(rule.kind);
@@ -2432,22 +2453,36 @@ function processText(raw, rules) {
   //
   // The change list below pairs segments by index, which only holds while
   // the count is unchanged; a rule that changes it will need that revisited.
+  // Note the counts this repairs are not themselves listed as changes: the
+  // list is built from what the rules marked, and this repair is not a rule.
+  // That is moot while no rule changes the count, and is the second thing to
+  // revisit on the day one does.
   const countsRepaired = doc.segments.length === countBefore
     ? 0
     : repairControlCounts(doc);
 
+  // Only the segments a rule marked can appear here, so this walks those
+  // rather than sweeping the whole document. sameSegment stays as a filter
+  // over them: a rule may mark a write that turned out to change nothing --
+  // StringReplaceRule counts a match even when the replacement equals it --
+  // and such a segment must not reach the Changes tab as a change with an
+  // identical before and after. What the filter no longer catches is the
+  // opposite case, a rule editing a segment without marking it; that is
+  // covered directly now, by the mark audits in parity.mjs and deid.mjs.
   const changes = [];
-  doc.segments.forEach((seg, i) => {
-    if (sameSegment(before[i], seg)) return;
+  for (const i of [...beforeBySegment.keys()].sort((a, b) => a - b)) {
+    const was = beforeBySegment.get(i);
+    const seg = doc.segments[i];
+    if (sameSegment(was, seg)) continue;
     const entry = ruleKindsBySegment.get(i) || { kinds: [], elements: new Map() };
     changes.push({
       index: i,
-      before: before[i],
+      before: was,
       after: { id: seg.id, elements: seg.elements.slice() },
       kinds: entry.kinds,
       elementKinds: entry.elements,
     });
-  });
+  }
 
   return {
     output: serialize(doc),
@@ -4142,6 +4177,7 @@ class DeidentifyRule {
 
   apply(segments) {
     const marks = new Map(); // segment index -> Set of element indices
+    const befores = new Map(); // segment index -> the segment as it arrived
     const mark = (i, el) => {
       let set = marks.get(i);
       if (!set) { set = new Set(); marks.set(i, set); }
@@ -4149,6 +4185,13 @@ class DeidentifyRule {
     };
     const put = (i, el, value) => {
       if (segments[i].elements[el] === value) return; // no-op: don't claim a change
+      // Copy the segment before the first write lands on it, and only then --
+      // processText no longer clones every segment up front, so this is the
+      // only chance to record what a rewritten value used to be. It has to
+      // happen here rather than in mark(), which runs after the assignment.
+      if (!befores.has(i)) {
+        befores.set(i, { id: segments[i].id, elements: segments[i].elements.slice() });
+      }
       segments[i].elements[el] = value;
       mark(i, el);
     };
@@ -4289,7 +4332,7 @@ class DeidentifyRule {
     const out = [];
     for (const [segment, elements] of [...marks].sort((a, b) => a[0] - b[0])) {
       occurrences += elements.size;
-      out.push({ segment, elements: [...elements] });
+      out.push({ segment, elements: [...elements], before: befores.get(segment) });
     }
     return { segments: out.length, occurrences, marks: out };
   }

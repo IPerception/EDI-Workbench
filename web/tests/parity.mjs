@@ -275,5 +275,26 @@ check("but the rule marks it anyway", noop.overclaimed.length > 0, true);
 check("and processText filters it back out",
   processText(raw, [new StringReplaceRule({ find: "ANYTOWN", replace: "ANYTOWN" })]).changes, []);
 
+console.log("\n[14] two rules on one segment report what arrived, not what the second found");
+// The change list is assembled from per-rule copies now, and a second rule
+// touching an already-edited segment copies it with the first rule's edit
+// already in place. processText keeps the earliest copy. Get this wrong and
+// the Changes tab shows a before that never existed in the input file: here
+// it would claim 20230102, a value the shift rule invented moments earlier.
+const chained = processText(raw, [
+  new Dtp472ServiceLineShiftRule(1),                                    // 20230101 -> 20230102
+  new StringReplaceRule({ find: "20230102", replace: "19990101" }),     // -> 19990101
+]);
+const shiftedThenSwapped = chained.changes.filter((c) => c.before.id === "DTP");
+check("the service-line DTPs are listed once each, not twice", shiftedThenSwapped.length, 2);
+check("before is the value from the input file",
+  shiftedThenSwapped.map((c) => c.before.elements[2]), ["20230101", "20230101"]);
+check("after is the value both rules left behind",
+  shiftedThenSwapped.map((c) => c.after.elements[2]), ["19990101", "19990101"]);
+check("both rules are credited on the segment",
+  [...new Set(shiftedThenSwapped.flatMap((c) => c.kinds))].sort(), ["shift", "swap"]);
+check("the output agrees with the change list",
+  (chained.output.match(/DTP\*472\*D8\*19990101~/g) || []).length, 2);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
