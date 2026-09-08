@@ -153,9 +153,17 @@ code change, audited the same way: the rule's identifier-bearing loops are
 opens no loop at all under this feature — see "the governing rule" above —
 so `scrubLoop` never reaches one of these NM1s, and `PERSON_LOOPS` itself
 never names an 835 loop id to begin with. An 835 handed through Limited Data
-Set comes back byte-identical to what went in, which is worth stating loudly
-in the app's own UI copy: silence here would hand a user a file they believe
-is scrubbed.
+Set comes back byte-identical to what went in, and silence about that would
+hand a user a file they believe is scrubbed.
+
+So the app says it twice, at the point of use rather than only in the guide:
+a caution inside the Limited Data Set card (`#deidRemit`, shown by
+`syncRunButton` whenever `has835` is true of the loaded file), and a message
+naming the reason after a run that changes nothing. The button is deliberately
+left **enabled** for an 835 — disabling it would read as "not yet", where the
+truth is "never, by design". `render.mjs` section [5] pins all of it, including
+that the caution clears again when an 837 is loaded over an 835, and that the
+output really is byte-identical rather than merely reported as such.
 
 ## Sources, and what could not be used
 
