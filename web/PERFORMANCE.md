@@ -142,7 +142,9 @@ move the ceiling far enough that this stays unnecessary.
 
 ## Test harnesses
 
-All committed. `node web/tests/all.mjs` runs the four correctness suites
-(engine/Python parity, outline and qualifier decoding, virtual-list windowing math,
-static self-containment lint); `node web/bench/bench.mjs` runs the benchmark that
-produced the numbers above.
+All committed. `node web/tests/all.mjs` runs the nine correctness suites
+(engine/Python parity, outline and qualifier decoding, structure-tree building, the
+claim index and CSV export, control counts and claim balance, de-identification,
+virtual-list windowing math, the load path against a throwaway DOM, and the static
+self-containment lint); `node web/bench/bench.mjs` runs the benchmark that produced
+the numbers above.

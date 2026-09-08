@@ -101,7 +101,7 @@ globalThis.getComputedStyle = globalThis.window.getComputedStyle;
 globalThis.matchMedia = globalThis.window.matchMedia;
 
 const app = new Function(
-  `${script}\nreturn { loadFile, SAMPLE_837P, SAMPLE_PACDR, SAMPLE_835, state };`
+  `${script}\nreturn { loadFile, deidentify, SAMPLE_837P, SAMPLE_PACDR, SAMPLE_835, state };`
 )();
 
 const paintedRows = () => (byId.get("docWindow").innerHTML.match(/class="row/g) || []).length;
@@ -150,6 +150,28 @@ check("a bad file does not throw out of loadFile", parseThrew, null);
 check("the workspace is hidden", byId.get("workspace").hidden, true);
 check("an error is shown", byId.get("parseError").innerHTML.length > 0, true);
 check("stale readouts are cleared", byId.get("readouts").innerHTML, "");
+
+console.log("\n[5] the Limited Data Set warns on an 835, and stops warning off one");
+// The rule is a no-op on an 835 -- its identifiers sit in loop 2100, which
+// scrubLoop never reaches. A silent no-op hands back a file the user believes
+// is scrubbed, so the caution is the safeguard and this is what pins it.
+// Loading an 837 over an 835 has to clear it again: a caution left standing on
+// a file the rule *does* scrub is the same failure pointed the other way.
+app.loadFile("sample_835.edi", app.SAMPLE_835);
+check("the 835 caution is shown for a remittance", byId.get("deidRemit").hidden, false);
+check("the button stays enabled anyway", byId.get("deidBtn").disabled, false);
+
+app.deidentify();
+check("running it on an 835 changes nothing", app.state.result.changes.length, 0);
+check("the output is byte-identical to the input", app.state.result.output, app.SAMPLE_835);
+check("the message names the reason", byId.get("toast").textContent,
+  "Remittance advice — nothing stripped, the file is unchanged");
+
+app.loadFile("sample_837p.edi", app.SAMPLE_837P);
+check("the caution clears for an 837", byId.get("deidRemit").hidden, true);
+
+app.loadFile("broken.edi", "this is not an interchange");
+check("the caution clears when nothing is loaded", byId.get("deidRemit").hidden, true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

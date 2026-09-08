@@ -1831,6 +1831,9 @@
         <p class="hint">Dates are shifted per patient rather than removed, and city, state and ZIP are kept &mdash; that is what a <b>HIPAA Limited Data Set</b> permits, and it is what keeps the file usable as test data. Providers are left real: an NPI is not patient information.</p>
         <p class="hint caution"><b>The result is still PHI.</b> A Limited Data Set is not de-identified data under HIPAA &mdash; it stays protected, and sharing it still needs a data use agreement. Only Safe Harbor or an expert determination produces data that leaves HIPAA behind, and neither is what this does.</p>
         <p class="hint">The mapping is random for every run and is never saved, so this is one-way &mdash; the output cannot be turned back into the original.</p>
+        <!-- Shown only for an 835. The rule is a no-op on one, and a silent
+             no-op hands back a file the user believes is scrubbed. -->
+        <p class="hint caution" id="deidRemit" hidden><b>This file is a remittance advice, and nothing here will be stripped from it.</b> An 835's patient identifiers sit directly inside loop <code>2100</code> (<code>NM1*QC</code>, <code>NM1*IL</code>), outside the loops this rule targets, so the file comes back byte-identical &mdash; unchanged, not de-identified. Run this on the 837 the remittance answers instead.</p>
         <button class="btn deid" id="deidBtn" type="button" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3 4 6v6c0 4.5 3.2 8.4 8 9 4.8-.6 8-4.5 8-9V6l-8-3Z" />
@@ -5938,6 +5941,10 @@ function syncRunButton() {
   // De-identification takes no configuration, so a loaded file is the only
   // thing it needs. The rule switches above deliberately don't gate it.
   $("deidBtn").disabled = !state.doc;
+  // The button stays enabled for an 835 -- running it is harmless, and
+  // disabling it would say "not yet" where the truth is "never, by design".
+  // Say so instead, before the click rather than after it.
+  $("deidRemit").hidden = !state.doc || !has835(state.doc.segments);
 }
 
 ["shiftOn", "swapOn"].forEach((id) => $(id).addEventListener("change", syncCards));
@@ -6036,7 +6043,12 @@ function deidentify() {
   // way back from here, and the file on screen is now the only copy of this
   // particular mapping.
   if (!result.changes.length) {
-    toast("No patient loops found — nothing to strip");
+    // An 835 is the one file that reaches zero changes by design rather than
+    // by accident, and "nothing to strip" reads as "already clean" on it. Name
+    // the reason, so the identical download isn't mistaken for a scrubbed one.
+    toast(has835(state.doc.segments)
+      ? "Remittance advice — nothing stripped, the file is unchanged"
+      : "No patient loops found — nothing to strip");
   }
 }
 
