@@ -2451,6 +2451,11 @@ function processText(raw, rules) {
 
   return {
     output: serialize(doc),
+    // The mutated document itself, so the UI can browse the result without
+    // parsing `output` back into a second copy of what is already here.
+    // Callers must treat it as owned by the result: the segment objects are
+    // live, not clones, and `changes` holds the only record of what they were.
+    doc,
     segmentCount: doc.segments.length,
     delimiters: {
       element: doc.elementSep,
@@ -6086,7 +6091,13 @@ function render(result) {
     `<div class="tile ${t.cls}"><b>${t.value.toLocaleString()}</b><span class="label">${t.label}</span></div>`
   ).join("");
 
-  state.doc = parse(result.output); // browse the edited document, not the original
+  // Browse the edited document, not the original. processText already holds
+  // the mutated document, so this takes it rather than re-parsing the output
+  // string back into a second full set of segment objects -- which cost a
+  // whole extra parse and about a third of peak heap for a document it had
+  // in hand the entire time. The segments here are the ones the rules
+  // mutated, which is exactly what the re-parse was reconstructing.
+  state.doc = result.doc;
   state.outline = buildOutline(state.doc.segments);
   state.claims = null;  // stale the moment the document changes; rebuilt on demand
   state.focus = null;

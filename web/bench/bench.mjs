@@ -12,7 +12,7 @@
  * actually does and they have very different budgets:
  *
  *   load  -- parse only, i.e. open a file and browse it
- *   run   -- snapshot + rules + diff + serialize + the UI's re-parse
+ *   run   -- snapshot + rules + diff + serialize
  *
  * Numbers come from Node, not a browser. Same V8, so the arithmetic
  * transfers; a real tab additionally pays for file.text() and the download
@@ -143,7 +143,10 @@ const [runTime] = time(() => {
     new Dtp472ServiceLineShiftRule(1),
     new StringReplaceRule({ find: "SPRINGFIELD", replace: "METROPOLIS" }),
   ]);
-  parse(result.output); // the UI re-parses so you can browse the edited doc; count it
+  // The UI used to re-parse result.output here so you could browse the edited
+  // document, and this benchmark counted that parse because it was real work
+  // a user paid for. processText now returns the mutated document directly,
+  // so there is nothing to count -- result.doc is what the UI browses.
   return result;
 });
 const runHeap = heap() - base;

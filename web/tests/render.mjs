@@ -173,6 +173,28 @@ check("the caution clears for an 837", byId.get("deidRemit").hidden, true);
 app.loadFile("broken.edi", "this is not an interchange");
 check("the caution clears when nothing is loaded", byId.get("deidRemit").hidden, true);
 
+console.log("\n[6] browsing after a run shows the edited document, not the original");
+// render() used to rebuild the browsable document with parse(result.output) --
+// a second full parse of what processText already held. It now takes
+// result.doc directly. The output string was never the thing at risk there
+// (parity.mjs pins that); what was at risk is the document you browse, so
+// that is what this checks: the same values the download carries.
+const subscriber = () =>
+  app.state.doc.segments.find((s) => s.id === "NM1" && s.elements[0] === "IL").elements[2];
+
+app.loadFile("sample_837p.edi", app.SAMPLE_837P);
+check("the loaded document carries the real name", subscriber(), "DOE");
+
+app.deidentify();
+const scrubbed = subscriber();
+check("the browsable document shows the scrubbed name", scrubbed !== "DOE", true);
+check("it is the document the run produced, not a re-parse of it",
+  app.state.doc === app.state.result.doc, true);
+check("the download agrees with what is on screen",
+  app.state.result.output.includes(scrubbed), true);
+check("the original is still the one that gets re-run",
+  app.state.raw.includes("DOE"), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
 console.log("clean");
